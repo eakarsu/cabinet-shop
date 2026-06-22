@@ -7,6 +7,7 @@
  * goes through the exact same validation as the website forms.
  */
 import { prisma } from "@/lib/db";
+import { runOptimizer, type Engine, type PartInput } from "@/lib/cut-optimizer";
 
 export type ToolKind = "read" | "write";
 
@@ -192,6 +193,41 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
   {
     kind: "read",
     function: {
+      name: "optimize_cut",
+      description:
+        "Run the stone cut optimizer for a job: nest countertop parts onto slabs and return how many slabs are needed, the yield %, waste, and material cost. Infer the parts from what the user describes (e.g. 'a 96x36 island and two 98x26 counters'). Optionally name a material to use its real slab size and cost.",
+      parameters: {
+        type: "object",
+        properties: {
+          material: { type: "string", description: "Optional material name (e.g. 'Black Pearl Granite') to use its slab size + cost." },
+          slabWidth: { type: "number", description: "Slab width in inches (default 126 or the material's)." },
+          slabHeight: { type: "number", description: "Slab height in inches (default 63 or the material's)." },
+          kerf: { type: "number", description: "Blade width in inches (default 0.125)." },
+          engine: { type: "string", enum: ["shelf", "maxrects", "freeform"], description: "Packing engine (default maxrects)." },
+          allowRotate: { type: "boolean", description: "Allow rotating parts (default true)." },
+          useRemnants: { type: "boolean", description: "Use saved remnants of the material as free stock first (default false)." },
+          parts: {
+            type: "array",
+            description: "Parts to cut.",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string" },
+                w: { type: "number", description: "width in inches" },
+                h: { type: "number", description: "height in inches" },
+                qty: { type: "integer" },
+              },
+              required: ["w", "h", "qty"],
+            },
+          },
+        },
+        required: ["parts"],
+      },
+    },
+  },
+  {
+    kind: "read",
+    function: {
       name: "query_data",
       description:
         "Look up any site data by choosing a read endpoint id from the catalog in the system prompt — services, testimonials, FAQs, team, quotes, consultations, etc.",
@@ -298,6 +334,55 @@ export async function runReadTool(name: string, args: any): Promise<unknown> {
           year: p.year,
           description: p.description,
         })),
+      };
+    }
+    case "optimize_cut": {
+      const partsIn: PartInput[] = Array.isArray(args?.parts)
+        ? args.parts.map((p: any) => ({
+            label: String(p.label || "Part"),
+            w: Number(p.w) || 0,
+            h: Number(p.h) || 0,
+            qty: Math.max(1, Number(p.qty) || 1),
+          }))
+        : [];
+      if (partsIn.length === 0) throw new Error("No parts were provided to optimize.");
+
+      let mat: any = null;
+      if (args?.material) {
+        mat = await prisma.material.findFirst({
+          where: { name: { contains: String(args.material), mode: "insensitive" } },
+        });
+      }
+      const slabW = Number(args?.slabWidth) || mat?.slabWidth || 126;
+      const slabH = Number(args?.slabHeight) || mat?.slabHeight || 63;
+      const slabCost = args?.slabCost != null ? Number(args.slabCost) : mat?.slabCost ?? null;
+      const kerf = args?.kerf != null ? Number(args.kerf) : 0.125;
+      const engine: Engine = ["shelf", "maxrects", "freeform"].includes(args?.engine)
+        ? args.engine
+        : "maxrects";
+      const allowRotate = args?.allowRotate !== false;
+
+      let remnants: { w: number; h: number; id: string }[] = [];
+      if (args?.useRemnants && mat) {
+        const rs = await prisma.remnant.findMany({ where: { materialId: mat.id, used: false } });
+        remnants = rs.map((r) => ({ w: r.w, h: r.h, id: r.id }));
+      }
+
+      const r = runOptimizer({
+        slabW, slabH, kerf, parts: partsIn, allowRotate, engine,
+        remnants, slabCost: slabCost ?? undefined,
+      });
+      return {
+        material: mat?.name ?? null,
+        slab: `${slabW}x${slabH}`,
+        engine,
+        slabsNeeded: r.slabsUsed,
+        remnantsUsed: r.remnantsUsed,
+        yieldPct: Number(r.yieldPct.toFixed(1)),
+        wasteSqFt: Number((r.wasteArea / 144).toFixed(1)),
+        materialCost: r.cost,
+        partsPlaced: r.placedCount,
+        unplaced: r.unplaced,
       };
     }
     case "check_consultation_availability": {

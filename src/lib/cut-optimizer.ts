@@ -17,6 +17,8 @@ export interface PartInput {
   w: number;
   h: number;
   qty: number;
+  /** Lock grain direction → never rotate this part. */
+  noRotate?: boolean;
   /** Optional corner notch → makes an L-shape (free-form engine only). */
   notchW?: number;
   notchH?: number;
@@ -43,6 +45,7 @@ export interface BinLayout {
   placements: Placement[];
   freeRects: Rect[]; // leftover usable rectangles (remnants)
   usedArea: number;
+  remnantId?: string; // source remnant id (for lifecycle tracking)
 }
 
 export interface OptimizeOptions {
@@ -52,7 +55,7 @@ export interface OptimizeOptions {
   parts: PartInput[];
   allowRotate: boolean;
   defects?: Rect[];
-  remnants?: { w: number; h: number; label?: string }[];
+  remnants?: { w: number; h: number; label?: string; id?: string }[];
   slabCost?: number;
   engine?: Engine;
 }
@@ -123,6 +126,7 @@ interface Bin {
   w: number; h: number;
   free: Rect[];
   placements: Placement[];
+  remnantId?: string;
 }
 
 function finalize(
@@ -137,6 +141,7 @@ function finalize(
     placements: b.placements,
     freeRects: b.free.filter((r) => r.w > 2 && r.h > 2),
     usedArea: b.placements.reduce((s, p) => s + p.w * p.h, 0),
+    remnantId: b.remnantId,
   }));
   const slabsUsed = layouts.filter((b) => b.kind === "slab").length;
   const remnantsUsed = layouts.filter((b) => b.kind === "remnant" && b.placements.length > 0).length;
@@ -156,13 +161,37 @@ function finalize(
 // ---------------------------------------------------------------------------
 // MaxRects (levels 1-4)
 // ---------------------------------------------------------------------------
+const SORTERS: ((a: PartInput, b: PartInput) => number)[] = [
+  (a, b) => b.w * b.h - a.w * a.h, // area desc
+  (a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h), // longest side desc
+  (a, b) => b.h - a.h, // height desc
+  (a, b) => b.w - a.w, // width desc
+];
+
+/** Multi-start: run MaxRects with several orderings, keep the best (fewest slabs). */
 function maxRects(opts: OptimizeOptions): OptimizeResult {
+  let best: OptimizeResult | null = null;
+  for (const sorter of SORTERS) {
+    const r = maxRectsCore(opts, sorter);
+    if (
+      !best ||
+      r.unplaced.length < best.unplaced.length ||
+      (r.unplaced.length === best.unplaced.length && r.slabsUsed < best.slabsUsed) ||
+      (r.unplaced.length === best.unplaced.length && r.slabsUsed === best.slabsUsed && r.yieldPct > best.yieldPct)
+    ) {
+      best = r;
+    }
+  }
+  return best!;
+}
+
+function maxRectsCore(opts: OptimizeOptions, sorter: (a: PartInput, b: PartInput) => number): OptimizeResult {
   const { slabW, slabH, kerf, allowRotate, defects = [], remnants = [] } = opts;
-  const rects = expand(opts.parts).sort((a, b) => b.w * b.h - a.w * a.h);
+  const rects = expand(opts.parts).sort(sorter);
   const unplaced: { label: string; w: number; h: number }[] = [];
 
   const bins: Bin[] = remnants.map((r) => ({
-    kind: "remnant" as const, w: r.w, h: r.h, free: [{ x: 0, y: 0, w: r.w, h: r.h }], placements: [],
+    kind: "remnant" as const, w: r.w, h: r.h, free: [{ x: 0, y: 0, w: r.w, h: r.h }], placements: [], remnantId: r.id,
   }));
 
   function newSlab(): Bin {
@@ -174,10 +203,11 @@ function maxRects(opts: OptimizeOptions): OptimizeResult {
   }
 
   function placeIn(bin: Bin, r: PartInput): boolean {
+    const canRotate = allowRotate && !r.noRotate;
     const fw = r.w + kerf, fh = r.h + kerf;
     let best: { fr: Rect; w: number; h: number; rot: boolean; score: number } | null = null;
     for (const fr of bin.free) {
-      const tries = allowRotate
+      const tries = canRotate
         ? [{ w: fw, h: fh, rot: false }, { w: fh, h: fw, rot: true }]
         : [{ w: fw, h: fh, rot: false }];
       for (const t of tries) {
@@ -198,8 +228,9 @@ function maxRects(opts: OptimizeOptions): OptimizeResult {
   }
 
   for (const r of rects) {
+    const canRotate = allowRotate && !r.noRotate;
     const fits = (w: number, h: number) =>
-      (w + kerf <= slabW && h + kerf <= slabH) || (allowRotate && h + kerf <= slabW && w + kerf <= slabH);
+      (w + kerf <= slabW && h + kerf <= slabH) || (canRotate && h + kerf <= slabW && w + kerf <= slabH);
     if (!fits(r.w, r.h)) { unplaced.push({ label: r.label, w: r.w, h: r.h }); continue; }
     // remnant bins first, then slabs, then a new slab
     let placed = false;
@@ -223,7 +254,7 @@ function shelf(opts: OptimizeOptions): OptimizeResult {
   const bins: SB[] = [];
 
   function place(bin: SB, r: PartInput): boolean {
-    const orients = allowRotate ? [{ w: r.w, h: r.h, rot: false }, { w: r.h, h: r.w, rot: true }] : [{ w: r.w, h: r.h, rot: false }];
+    const orients = allowRotate && !r.noRotate ? [{ w: r.w, h: r.h, rot: false }, { w: r.h, h: r.w, rot: true }] : [{ w: r.w, h: r.h, rot: false }];
     for (const sh of bin.shelves) for (const o of orients) {
       if (o.h > sh.height) continue;
       const gap = sh.usedW > 0 ? kerf : 0;
@@ -324,7 +355,7 @@ function freeform(opts: OptimizeOptions): OptimizeResult {
   }
   function place(bin: RB, p: PartInput): boolean {
     const base = partMask(p, cell);
-    const orients = allowRotate ? [base, rotateMask(base)] : [base];
+    const orients = allowRotate && !p.noRotate ? [base, rotateMask(base)] : [base];
     for (let r0 = 0; r0 < rows; r0++) for (let c0 = 0; c0 < cols; c0++) {
       for (let oi = 0; oi < orients.length; oi++) {
         const m = orients[oi];

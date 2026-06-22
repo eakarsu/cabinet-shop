@@ -37,6 +37,17 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, created: data.length }, { status: 201 });
 }
 
+export async function PATCH(req: NextRequest) {
+  if (!isPrivileged(await getCaller(req)))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const b = await req.json().catch(() => ({}));
+  const ids: string[] = Array.isArray(b?.ids) ? b.ids : [];
+  if (ids.length === 0) return NextResponse.json({ ok: true, updated: 0 });
+  const used = b?.used === false ? false : true;
+  const res = await prisma.remnant.updateMany({ where: { id: { in: ids } }, data: { used } });
+  return NextResponse.json({ ok: true, updated: res.count });
+}
+
 export async function DELETE(req: NextRequest) {
   if (!isPrivileged(await getCaller(req)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

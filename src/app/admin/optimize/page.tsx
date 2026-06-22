@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Trash2, Play, Save, Boxes, FileText, Loader2 } from "lucide-react";
+import { Plus, Trash2, Play, Save, Boxes, FileText, Loader2, Printer } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/page-header";
 import {
   runOptimizer,
@@ -23,6 +23,7 @@ const DEFAULT_PARTS: PartInput[] = [
 type Material = {
   id: string; name: string; category: string;
   slabWidth: number | null; slabHeight: number | null; slabCost: number | null;
+  imageUrl: string | null;
 };
 
 const input = "w-full rounded-sm border border-input bg-background px-2 py-1.5 text-sm text-white outline-none focus:border-gold";
@@ -39,7 +40,7 @@ export default function OptimizePage() {
   const [parts, setParts] = useState<PartInput[]>(DEFAULT_PARTS);
   const [defects, setDefects] = useState<Rect[]>([]);
   const [useRemnants, setUseRemnants] = useState(false);
-  const [remnantStock, setRemnantStock] = useState<{ w: number; h: number }[]>([]);
+  const [remnantStock, setRemnantStock] = useState<{ w: number; h: number; id: string }[]>([]);
   const [result, setResult] = useState<OptimizeResult | null>(null);
   const [jobs, setJobs] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
@@ -71,7 +72,7 @@ export default function OptimizePage() {
     if (useRemnants && materialId) {
       fetch(`/api/remnants?materialId=${materialId}`)
         .then((r) => r.json())
-        .then((rs) => setRemnantStock(rs.map((r: any) => ({ w: r.w, h: r.h }))))
+        .then((rs) => setRemnantStock(rs.map((r: any) => ({ w: r.w, h: r.h, id: r.id }))))
         .catch(() => setRemnantStock([]));
     } else {
       setRemnantStock([]);
@@ -116,12 +117,25 @@ export default function OptimizePage() {
     const remnants = result.bins.flatMap((b) =>
       b.freeRects.filter((r) => r.w >= 6 && r.h >= 6).map((r) => ({ materialId: materialId || null, label: "Remnant", w: Math.round(r.w), h: Math.round(r.h) }))
     );
+    // Remnants that were consumed in this run → mark them used (lifecycle).
+    const consumedIds = result.bins
+      .filter((b) => b.kind === "remnant" && b.placements.length > 0 && b.remnantId)
+      .map((b) => b.remnantId as string);
     try {
       const res = await fetch("/api/remnants", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ remnants }),
       });
       const d = await res.json();
-      setMsg(res.ok ? `Saved ${d.created} remnant(s) ✓` : d.error);
+      if (consumedIds.length > 0) {
+        await fetch("/api/remnants", {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: consumedIds }),
+        });
+      }
+      setMsg(
+        res.ok
+          ? `Saved ${d.created} new remnant(s)${consumedIds.length ? `, retired ${consumedIds.length} used` : ""} ✓`
+          : d.error
+      );
     } finally { setBusy(""); }
   }
 
@@ -143,6 +157,52 @@ export default function OptimizePage() {
       setMsg("Estimate created in Estimates ✓");
     } finally { setBusy(""); }
   }
+
+  function loadJob(j: any) {
+    const i = j.input || {};
+    if (i.slabW) setSlabW(i.slabW);
+    if (i.slabH) setSlabH(i.slabH);
+    if (i.kerf != null) setKerf(i.kerf);
+    if (Array.isArray(i.parts)) setParts(i.parts);
+    if (typeof i.allowRotate === "boolean") setAllowRotate(i.allowRotate);
+    if (Array.isArray(i.defects)) setDefects(i.defects);
+    if (j.engine) setEngine(j.engine);
+    if (j.materialId) setMaterialId(j.materialId);
+    setMsg("Loaded job ✓");
+  }
+
+  function printCutList() {
+    if (!result) return;
+    const mat = materials.find((m) => m.id === materialId);
+    const win = window.open("", "_blank");
+    if (!win) return;
+    const partRows = parts
+      .map((p) => `<tr><td>${p.label}</td><td>${p.w}"</td><td>${p.h}"</td><td>${p.qty}</td></tr>`)
+      .join("");
+    const bins = result.bins
+      .map(
+        (b, i) =>
+          `<h3>${b.kind === "remnant" ? "Remnant" : "Slab"} ${i + 1} — ${b.w}"×${b.h}"</h3>
+          <table><thead><tr><th>Part</th><th>X</th><th>Y</th><th>W</th><th>H</th><th>Rotated</th></tr></thead><tbody>${b.placements
+            .map((p) => `<tr><td>${p.label}</td><td>${p.x.toFixed(1)}</td><td>${p.y.toFixed(1)}</td><td>${p.w}"</td><td>${p.h}"</td><td>${p.rotated ? "90°" : "—"}</td></tr>`)
+            .join("")}</tbody></table>`
+      )
+      .join("");
+    win.document.write(`<!doctype html><html><head><title>Cut List — ${mat?.name ?? "Custom"}</title>
+      <style>body{font-family:Arial,sans-serif;margin:32px;color:#111}h1{margin:0 0 4px}table{border-collapse:collapse;width:100%;margin:8px 0 20px}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:13px}th{background:#f3f3f3}.sum{color:#555;margin-bottom:16px}</style>
+      </head><body>
+      <h1>Cut List — ${mat?.name ?? "Custom slab"}</h1>
+      <div class="sum">Slab ${result.slabW}"×${result.slabH}" · Slabs needed: <b>${result.slabsUsed}</b> · Yield: <b>${result.yieldPct.toFixed(1)}%</b> · Material cost: <b>${result.cost != null ? "$" + result.cost.toFixed(0) : "—"}</b></div>
+      <h2>Parts</h2><table><thead><tr><th>Part</th><th>Width</th><th>Height</th><th>Qty</th></tr></thead><tbody>${partRows}</tbody></table>
+      <h2>Cut layout</h2>${bins}
+      <p style="color:#999;font-size:11px;margin-top:24px">Generated by Heritage Cut Optimizer · ${new Date().toLocaleString()}</p>
+      </body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  }
+
+  const selMat = materials.find((m) => m.id === materialId);
 
   const colorFor = useMemo(() => {
     const map = new Map<string, string>(); let n = 0;
@@ -197,7 +257,7 @@ export default function OptimizePage() {
           </div>
 
           {/* Defects editor */}
-          <DefectEditor slabW={slabW} slabH={slabH} defects={defects} setDefects={setDefects} />
+          <DefectEditor slabW={slabW} slabH={slabH} defects={defects} setDefects={setDefects} imageUrl={selMat?.imageUrl ?? null} />
 
           {/* Parts */}
           <div className="rounded-md border border-border bg-card p-5">
@@ -218,6 +278,10 @@ export default function OptimizePage() {
                     <input type="number" value={p.qty} onChange={(e) => setPart(i, { qty: +e.target.value })} className={input} />
                     <button onClick={() => removePart(i)} className="text-muted-foreground hover:text-red-400"><Trash2 size={14} /></button>
                   </div>
+                  <label className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <input type="checkbox" checked={!!p.noRotate} onChange={(e) => setPart(i, { noRotate: e.target.checked })} className="h-3 w-3 accent-[hsl(var(--gold))]" />
+                    Lock grain (no rotation)
+                  </label>
                   {engine === "freeform" && (
                     <div className="mt-1 grid grid-cols-[1fr_64px_64px_56px_28px] gap-1.5">
                       <span className="self-center text-[10px] text-muted-foreground">L-notch (corner cut)</span>
@@ -288,6 +352,7 @@ export default function OptimizePage() {
                 <button onClick={saveJob} disabled={!!busy} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm">{busy === "job" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save job</button>
                 <button onClick={saveRemnants} disabled={!!busy} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm">{busy === "rem" ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />} Save remnants</button>
                 <button onClick={createEstimate} disabled={!!busy} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm">{busy === "quote" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Create estimate</button>
+                <button onClick={printCutList} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm"><Printer size={14} /> Print cut list</button>
                 {msg && <span className="self-center text-sm text-gold">{msg}</span>}
               </div>
 
@@ -308,10 +373,10 @@ export default function OptimizePage() {
               <h3 className="mb-3 font-semibold text-white">Recent jobs</h3>
               <div className="space-y-2">
                 {jobs.slice(0, 6).map((j) => (
-                  <div key={j.id} className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-2 text-sm">
-                    <span className="text-white">{j.name ?? "Cut job"} <span className="text-xs text-muted-foreground">· {j.engine}</span></span>
+                  <button key={j.id} onClick={() => loadJob(j)} className="flex w-full items-center justify-between rounded-md border border-border bg-card px-4 py-2 text-left text-sm transition-colors hover:border-gold/40">
+                    <span className="text-white">{j.name ?? "Cut job"} <span className="text-xs text-muted-foreground">· {j.engine} · load ↺</span></span>
                     <span className="text-muted-foreground">{j.slabsUsed} slab(s) · {j.yieldPct.toFixed(0)}%{j.cost != null ? ` · $${j.cost.toFixed(0)}` : ""}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -331,7 +396,7 @@ function Stat({ label, value, highlight }: { label: string; value: string; highl
   );
 }
 
-function DefectEditor({ slabW, slabH, defects, setDefects }: { slabW: number; slabH: number; defects: Rect[]; setDefects: (d: Rect[]) => void; }) {
+function DefectEditor({ slabW, slabH, defects, setDefects, imageUrl }: { slabW: number; slabH: number; defects: Rect[]; setDefects: (d: Rect[]) => void; imageUrl?: string | null; }) {
   const ref = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const [cur, setCur] = useState<Rect | null>(null);
@@ -355,6 +420,7 @@ function DefectEditor({ slabW, slabH, defects, setDefects }: { slabW: number; sl
         onMouseUp={() => { if (cur && cur.w > 2 && cur.h > 2) setDefects([...defects, cur]); setDrag(null); setCur(null); }}
         onMouseLeave={() => { setDrag(null); setCur(null); }}
       >
+        {imageUrl && <image href={imageUrl} x={0} y={0} width={W} height={H} preserveAspectRatio="xMidYMid slice" opacity={0.7} />}
         <rect x={0} y={0} width={W} height={H} fill="none" stroke="#3a3a40" />
         {defects.map((d, i) => (
           <rect key={i} x={d.x * scale} y={d.y * scale} width={d.w * scale} height={d.h * scale} fill="#ef4444" fillOpacity={0.4} stroke="#ef4444" />

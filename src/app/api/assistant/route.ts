@@ -59,7 +59,10 @@ Guidelines:
   materials.list (or search_materials); "add a quartz called Frost White" →
   perform_action material.create; "remove the Uba Tuba" → query_data to find its
   id then perform_action material.delete; "change our phone number to X" →
-  perform_action settings.update.
+  perform_action settings.update; "how many slabs for a 96x36 island and two
+  98x26 counters in Black Pearl granite?" or "optimize this cut / minimize waste"
+  → call optimize_cut with the parts inferred from their message (and the named
+  material) and report slabs needed, yield %, and cost.
 
 Available endpoints (id → what it does):
 ${endpointCatalog()}`;
