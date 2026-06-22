@@ -1,0 +1,112 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { aiRateLimiter } from "@/lib/ai-helpers";
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_MODEL =
+  process.env.OPENROUTER_MODEL || "anthropic/claude-3-5-sonnet-20241022";
+
+// Named AI helpers used across the admin + customer dashboards.
+const FEATURES: Record<string, { system: string }> = {
+  lead_summary: {
+    system:
+      "You are a sales assistant for a cabinet & stone countertop company. Given a lead's details, write a 2-3 sentence summary and a clear recommended next step. Be concise and practical.",
+  },
+  lead_reply: {
+    system:
+      "You are a friendly sales rep for Heritage Cabinet & Stone. Draft a short, warm email reply to this lead that acknowledges their project, answers likely questions, and proposes booking a free in-home consultation. Keep it under 120 words. Sign off as 'The Heritage Team'.",
+  },
+  design_ideas: {
+    system:
+      "You are an interior design assistant for a kitchen & bath remodeler specializing in granite, quartz, marble, and custom cabinetry. Given the customer's description, suggest 3 concrete design directions (material + cabinet + edge/finish combinations) with a one-line reason each. Be specific and encouraging.",
+  },
+  material_recommender: {
+    system:
+      "You are a stone & cabinetry expert. Based on the customer's needs (budget, style, durability, maintenance), recommend the best material type (granite, quartz, or marble) and 1-2 specific looks, with a short why. Mention trade-offs honestly.",
+  },
+};
+
+export async function POST(request: NextRequest) {
+  const t0 = Date.now();
+  if (!OPENROUTER_API_KEY) {
+    return NextResponse.json(
+      { error: "AI is unavailable — OPENROUTER_API_KEY is not set." },
+      { status: 503 }
+    );
+  }
+
+  const rateKey = request.headers.get("x-forwarded-for") || "anon";
+  if (!aiRateLimiter(rateKey).allowed) {
+    return NextResponse.json(
+      { error: "AI request limit reached. Try again later." },
+      { status: 429 }
+    );
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const feature = String(body.feature || "");
+  const prompt = String(body.prompt || "").slice(0, 4000);
+  const cfg = FEATURES[feature];
+  if (!cfg) {
+    return NextResponse.json({ error: "Unknown AI feature." }, { status: 400 });
+  }
+  if (!prompt.trim()) {
+    return NextResponse.json({ error: "Nothing to work with." }, { status: 422 });
+  }
+
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.NEXTAUTH_URL || "http://localhost:3000",
+        "X-Title": "Heritage Cabinet & Stone AI",
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [
+          { role: "system", content: cfg.system },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.6,
+        max_tokens: 600,
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`OpenRouter ${res.status}: ${txt.slice(0, 200)}`);
+    }
+    const json = await res.json();
+    const text = json.choices?.[0]?.message?.content ?? "";
+
+    await prisma.aiResult
+      .create({
+        data: {
+          feature,
+          model: OPENROUTER_MODEL,
+          input: { prompt } as any,
+          output: { text } as any,
+          durationMs: Date.now() - t0,
+        },
+      })
+      .catch(() => {});
+
+    return NextResponse.json({ text });
+  } catch (e) {
+    await prisma.aiResult
+      .create({
+        data: {
+          feature,
+          model: OPENROUTER_MODEL,
+          error: e instanceof Error ? e.message : String(e),
+          durationMs: Date.now() - t0,
+        },
+      })
+      .catch(() => {});
+    return NextResponse.json(
+      { error: "The AI ran into a problem. Please try again." },
+      { status: 500 }
+    );
+  }
+}

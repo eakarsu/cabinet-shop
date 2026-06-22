@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 6% 7%;
+    --foreground: 30 8% 90%;
+    --card: 240 5% 10%;
+    --card-foreground: 30 8% 90%;
+    --primary: 40 45% 57%;
+    --primary-foreground: 36 60% 8%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 30 8% 90%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 30 5% 60%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 30 8% 90%;
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
+    --ring: 40 45% 57%;
+    --gold: 40 50% 57%;
+    --gold-bright: 40 65% 67%;
+    --radius: 0.4rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  /* Hide number-input spinner arrows so values aren't clipped in narrow fields */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.35em] text-gold;
+  }
+  .gold-grad {
+    background: linear-gradient(
+      120deg,
+      hsl(var(--gold-bright)),
+      hsl(var(--gold)) 60%,
+      hsl(36 45% 38%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .btn-gold {
+    @apply inline-flex items-center justify-center rounded-sm font-bold text-[hsl(36_60%_8%)] transition;
+    background: linear-gradient(180deg, hsl(var(--gold-bright)), hsl(var(--gold)));
+    box-shadow: 0 10px 30px -10px hsl(var(--gold) / 0.6);
+  }
+  .btn-gold:hover {
+    filter: brightness(1.06);
+    transform: translateY(-2px);
+  }
+  .btn-outline-gold {
+    @apply inline-flex items-center justify-center rounded-sm font-semibold text-gold-bright transition;
+    border: 1px solid hsl(var(--gold) / 0.5);
+  }
+  .btn-outline-gold:hover {
+    background: hsl(var(--gold) / 0.12);
+    border-color: hsl(var(--gold));
+  }
+  .hero-stone {
+    background:
+      radial-gradient(1200px 600px at 70% -10%, hsl(var(--gold) / 0.18), transparent 60%),
+      radial-gradient(900px 500px at 10% 110%, hsl(var(--gold) / 0.1), transparent 55%),
+      linear-gradient(180deg, hsl(240 7% 5%), hsl(240 5% 10%) 60%, hsl(240 7% 5%));
+  }
+  .lift {
+    @apply transition duration-300;
+  }
+  .lift:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  }
+  .swatch {
+    @apply relative overflow-hidden;
+  }
+  .swatch::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      115deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.22) 50%,
+      transparent 70%
+    );
+    transform: translateX(-120%);
+    transition: transform 0.8s ease;
+  }
+  .swatch:hover::before {
+    transform: translateX(120%);
+  }
+}

@@ -1,0 +1,191 @@
+// Heritage Cabinet & Stone — database schema
+// PostgreSQL + Prisma (same stack as the restaurant app).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Materials & finishes shown on the Materials page and home preview.
+model Material {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  category  String // Granite | Quartz | Marble | Cabinetry
+  kind      String // "Natural Stone" | "Engineered" | "Built in-house"
+  blurb     String
+  origin    String?
+  priceTier String   @default("$$") // $ | $$ | $$$
+  features  String[]
+  swatch    String // tailwind gradient placeholder for a slab photo
+  imageUrl  String? // optional real photo; falls back to the swatch gradient
+  featured  Boolean  @default(false)
+  order     Int      @default(0)
+  // Cut-optimizer stock data (per full slab of this material)
+  slabWidth  Float? // inches
+  slabHeight Float? // inches
+  slabCost   Float? // $ per slab
+  createdAt DateTime @default(now())
+}
+
+/// Leftover usable pieces from a cut job, reusable as stock.
+model Remnant {
+  id         String   @id @default(cuid())
+  materialId String?
+  label      String?
+  w          Float
+  h          Float
+  used       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+/// A saved cut-optimization run (inputs + computed layout + cost).
+model OptimizationJob {
+  id         String   @id @default(cuid())
+  name       String?
+  materialId String?
+  engine     String   @default("maxrects")
+  input      Json
+  result     Json
+  slabsUsed  Int      @default(0)
+  yieldPct   Float    @default(0)
+  cost       Float?
+  createdAt  DateTime @default(now())
+}
+
+/// Completed projects shown in the filterable gallery.
+model Project {
+  id          String   @id @default(cuid())
+  title       String
+  tag         String // Granite | Quartz | Marble | Cabinetry
+  location    String?
+  description String?
+  grad        String // tailwind gradient placeholder
+  imageUrl    String? // optional real photo; falls back to the grad gradient
+  year        Int?
+  featured    Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+/// Services offered (home "What we do" section).
+model Service {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String
+  icon        String // lucide icon name
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+/// Customer reviews.
+model Testimonial {
+  id        String   @id @default(cuid())
+  quote     String
+  name      String
+  detail    String?
+  rating    Int      @default(5)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+/// Team members shown on the About page.
+model TeamMember {
+  id        String   @id @default(cuid())
+  name      String
+  role      String
+  bio       String?
+  initials  String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+/// Frequently asked questions (About page).
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+/// Leads submitted through the contact / free-estimate form.
+model QuoteRequest {
+  id          String   @id @default(cuid())
+  name        String
+  email       String
+  phone       String
+  projectType String?
+  material    String?
+  zip         String?
+  message     String?
+  adminNotes  String? // internal staff notes, not shown to the customer
+  source      String   @default("website") // website | ai_assistant
+  status      String   @default("new") // new | contacted | scheduled | won | lost
+  createdAt   DateTime @default(now())
+}
+
+/// A customer's saved/favorited materials.
+model Favorite {
+  id         String   @id @default(cuid())
+  email      String // owning customer's email
+  materialId String
+  createdAt  DateTime @default(now())
+
+  @@unique([email, materialId])
+}
+
+/// Singleton site settings editable from the admin dashboard.
+model Setting {
+  id          String   @id @default("default")
+  companyName String
+  phone       String
+  email       String
+  address     String
+  hours       String[]
+  updatedAt   DateTime @updatedAt
+}
+
+/// In-home / showroom design consultations booked by guests or the AI concierge.
+model Consultation {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  phone       String
+  date        DateTime
+  time        String // "HH:MM" 24h
+  projectType String?
+  material    String?
+  address     String?
+  notes       String?
+  status      String   @default("requested") // requested | confirmed | completed | cancelled
+  source      String   @default("website") // website | ai_assistant
+  createdAt   DateTime @default(now())
+}
+
+/// Login accounts — staff (admin) and customers.
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      String   @default("customer") // admin | customer
+  createdAt DateTime @default(now())
+}
+
+/// Audit log of every AI assistant interaction (mirrors the restaurant app).
+model AiResult {
+  id         String   @id @default(cuid())
+  feature    String
+  model      String?
+  input      Json?
+  output     Json?
+  error      String?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+}
