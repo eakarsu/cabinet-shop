@@ -13,6 +13,11 @@ import {
 } from "@/lib/cut-optimizer";
 
 const PALETTE = ["#c8a25a","#7c8aa5","#9c7b3d","#5a6b52","#8a5a5a","#6a7b8a","#a88a5a","#7a6a8a","#5a8a7a","#8a7a5a"];
+// Standard slab dimensions (inches) and price tiers for the dropdowns.
+const WIDTHS = [96, 108, 112, 118, 120, 126, 130];
+const HEIGHTS = [52, 55, 63, 65, 70, 78];
+const PRICES = [400, 500, 700, 900, 1100, 1400, 1600, 2000, 2500];
+
 const DEFAULT_PARTS: PartInput[] = [
   { label: "Island top", w: 78, h: 54, qty: 4 },
   { label: "Counter run", w: 58, h: 46, qty: 4 },
@@ -229,16 +234,18 @@ export default function OptimizePage() {
             <h3 className="font-semibold text-white">Material &amp; slab</h3>
             <select value={materialId} onChange={(e) => pickMaterial(e.target.value)} className={`w-full ${input}`}>
               <option value="">— Custom slab —</option>
-              {materials.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} {m.slabWidth ? `(${m.slabWidth}×${m.slabHeight})` : ""}
-                </option>
-              ))}
+              {materials
+                .filter((m) => m.slabWidth && m.slabHeight)
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
             </select>
             <div className="grid grid-cols-3 gap-2">
-              <label className="text-xs text-muted-foreground">Width<input type="number" value={slabW} onChange={(e) => setSlabW(+e.target.value)} className={`mt-1 w-full ${input}`} /></label>
-              <label className="text-xs text-muted-foreground">Height<input type="number" value={slabH} onChange={(e) => setSlabH(+e.target.value)} className={`mt-1 w-full ${input}`} /></label>
-              <label className="text-xs text-muted-foreground">Cost $<input type="number" value={slabCost} onChange={(e) => setSlabCost(+e.target.value)} className={`mt-1 w-full ${input}`} /></label>
+              <DimSelect label="Width (in)" value={slabW} set={setSlabW} options={WIDTHS} />
+              <DimSelect label="Height (in)" value={slabH} set={setSlabH} options={HEIGHTS} />
+              <DimSelect label="Price" value={slabCost} set={setSlabCost} options={PRICES} prefix="$" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="text-xs text-muted-foreground">Kerf (in)<input type="number" step="0.0625" value={kerf} onChange={(e) => setKerf(+e.target.value)} className={`mt-1 w-full ${input}`} /></label>
@@ -384,6 +391,36 @@ export default function OptimizePage() {
         </div>
       </div>
     </>
+  );
+}
+
+function DimSelect({
+  label, value, set, options, prefix = "",
+}: {
+  label: string; value: number; set: (n: number) => void; options: number[]; prefix?: string;
+}) {
+  const opts = Array.from(new Set([...options, value].filter((n) => n > 0))).sort((a, b) => a - b);
+  return (
+    <label className="text-xs text-muted-foreground">
+      {label}
+      <select
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === "custom") {
+            const n = Number(window.prompt(`Enter ${label}:`, String(value)));
+            if (!isNaN(n) && n > 0) set(n);
+          } else {
+            set(+e.target.value);
+          }
+        }}
+        className="mt-1 w-full rounded-sm border border-input bg-background px-2 py-1.5 text-sm text-white outline-none focus:border-gold"
+      >
+        {opts.map((o) => (
+          <option key={o} value={o}>{prefix}{o}</option>
+        ))}
+        <option value="custom">Custom…</option>
+      </select>
+    </label>
   );
 }
 
