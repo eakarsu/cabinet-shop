@@ -62,7 +62,10 @@ Guidelines:
   perform_action settings.update; "how many slabs for a 96x36 island and two
   98x26 counters in Black Pearl granite?" or "optimize this cut / minimize waste"
   → call optimize_cut with the parts inferred from their message (and the named
-  material) and report slabs needed, yield %, and cost.
+  material) and report slabs needed, yield %, and cost. If they then want to
+  "save this job", "record it", or "turn it into a quote/estimate" → call
+  save_cut_job (a write — it saves the job and optionally creates a costed
+  estimate after the guest confirms).
 
 Available endpoints (id → what it does):
 ${endpointCatalog()}`;

@@ -259,6 +259,45 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       },
     },
   },
+  {
+    kind: "write",
+    function: {
+      name: "save_cut_job",
+      description:
+        "Run the cut optimizer AND save it as a job (and optionally create a costed estimate) in one step. Use when the user wants to record/save an optimization or turn it into a quote. Requires confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Job name (e.g. customer or kitchen name)." },
+          material: { type: "string", description: "Material name to use its slab size + cost." },
+          slabWidth: { type: "number" },
+          slabHeight: { type: "number" },
+          kerf: { type: "number" },
+          engine: { type: "string", enum: ["shelf", "maxrects", "freeform"] },
+          allowRotate: { type: "boolean" },
+          useRemnants: { type: "boolean" },
+          parts: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string" },
+                w: { type: "number" },
+                h: { type: "number" },
+                qty: { type: "integer" },
+              },
+              required: ["w", "h", "qty"],
+            },
+          },
+          createEstimate: { type: "boolean", description: "Also create a costed estimate/lead." },
+          customerName: { type: "string" },
+          customerEmail: { type: "string" },
+          customerPhone: { type: "string" },
+        },
+        required: ["parts"],
+      },
+    },
+  },
 ];
 
 export const TOOL_KIND: Record<string, ToolKind> = Object.fromEntries(
@@ -268,6 +307,39 @@ export const TOOL_KIND: Record<string, ToolKind> = Object.fromEntries(
 // ---------------------------------------------------------------------------
 // Read executors
 // ---------------------------------------------------------------------------
+/** Resolve material + run the optimizer from loose tool args. Shared by the
+ *  read (optimize_cut) and write (save_cut_job) tools. */
+async function runCutFromArgs(args: any) {
+  const partsIn: PartInput[] = Array.isArray(args?.parts)
+    ? args.parts.map((p: any) => ({
+        label: String(p.label || "Part"),
+        w: Number(p.w) || 0,
+        h: Number(p.h) || 0,
+        qty: Math.max(1, Number(p.qty) || 1),
+      }))
+    : [];
+  if (partsIn.length === 0) throw new Error("No parts were provided to optimize.");
+  let mat: any = null;
+  if (args?.material) {
+    mat = await prisma.material.findFirst({
+      where: { name: { contains: String(args.material), mode: "insensitive" } },
+    });
+  }
+  const slabW = Number(args?.slabWidth) || mat?.slabWidth || 126;
+  const slabH = Number(args?.slabHeight) || mat?.slabHeight || 63;
+  const slabCost = args?.slabCost != null ? Number(args.slabCost) : mat?.slabCost ?? null;
+  const kerf = args?.kerf != null ? Number(args.kerf) : 0.125;
+  const engine: Engine = ["shelf", "maxrects", "freeform"].includes(args?.engine) ? args.engine : "maxrects";
+  const allowRotate = args?.allowRotate !== false;
+  let remnants: { w: number; h: number; id: string }[] = [];
+  if (args?.useRemnants && mat) {
+    const rs = await prisma.remnant.findMany({ where: { materialId: mat.id, used: false } });
+    remnants = rs.map((r) => ({ w: r.w, h: r.h, id: r.id }));
+  }
+  const result = runOptimizer({ slabW, slabH, kerf, parts: partsIn, allowRotate, engine, remnants, slabCost: slabCost ?? undefined });
+  return { result, materialId: mat?.id ?? null, materialName: mat?.name ?? null, slabW, slabH, slabCost, engine, partsIn };
+}
+
 export async function runReadTool(name: string, args: any): Promise<unknown> {
   switch (name) {
     case "query_data": {
@@ -337,45 +409,12 @@ export async function runReadTool(name: string, args: any): Promise<unknown> {
       };
     }
     case "optimize_cut": {
-      const partsIn: PartInput[] = Array.isArray(args?.parts)
-        ? args.parts.map((p: any) => ({
-            label: String(p.label || "Part"),
-            w: Number(p.w) || 0,
-            h: Number(p.h) || 0,
-            qty: Math.max(1, Number(p.qty) || 1),
-          }))
-        : [];
-      if (partsIn.length === 0) throw new Error("No parts were provided to optimize.");
-
-      let mat: any = null;
-      if (args?.material) {
-        mat = await prisma.material.findFirst({
-          where: { name: { contains: String(args.material), mode: "insensitive" } },
-        });
-      }
-      const slabW = Number(args?.slabWidth) || mat?.slabWidth || 126;
-      const slabH = Number(args?.slabHeight) || mat?.slabHeight || 63;
-      const slabCost = args?.slabCost != null ? Number(args.slabCost) : mat?.slabCost ?? null;
-      const kerf = args?.kerf != null ? Number(args.kerf) : 0.125;
-      const engine: Engine = ["shelf", "maxrects", "freeform"].includes(args?.engine)
-        ? args.engine
-        : "maxrects";
-      const allowRotate = args?.allowRotate !== false;
-
-      let remnants: { w: number; h: number; id: string }[] = [];
-      if (args?.useRemnants && mat) {
-        const rs = await prisma.remnant.findMany({ where: { materialId: mat.id, used: false } });
-        remnants = rs.map((r) => ({ w: r.w, h: r.h, id: r.id }));
-      }
-
-      const r = runOptimizer({
-        slabW, slabH, kerf, parts: partsIn, allowRotate, engine,
-        remnants, slabCost: slabCost ?? undefined,
-      });
+      const c = await runCutFromArgs(args);
+      const r = c.result;
       return {
-        material: mat?.name ?? null,
-        slab: `${slabW}x${slabH}`,
-        engine,
+        material: c.materialName,
+        slab: `${c.slabW}x${c.slabH}`,
+        engine: c.engine,
         slabsNeeded: r.slabsUsed,
         remnantsUsed: r.remnantsUsed,
         yieldPct: Number(r.yieldPct.toFixed(1)),
@@ -460,6 +499,30 @@ export async function previewWrite(name: string, args: any): Promise<WritePrevie
         `. Phone: ${normalized.phone}.`;
       return { summary, normalized };
     }
+    case "save_cut_job": {
+      const c = await runCutFromArgs(args);
+      const createEstimate = !!args?.createEstimate;
+      const costStr = c.result.cost != null ? `, $${c.result.cost.toFixed(0)} material` : "";
+      const summary =
+        `Save cut job "${args?.name || c.materialName || "Cut job"}" — ` +
+        `${c.result.slabsUsed} slab(s), ${c.result.yieldPct.toFixed(1)}% yield${costStr}` +
+        (createEstimate ? ` and create an estimate${args?.customerName ? ` for ${args.customerName}` : ""}.` : ".");
+      return {
+        summary,
+        normalized: {
+          name: args?.name || c.materialName || "Cut job",
+          materialId: c.materialId,
+          engine: c.engine,
+          slabW: c.slabW,
+          slabH: c.slabH,
+          partsIn: c.partsIn,
+          result: c.result,
+          materialName: c.materialName,
+          createEstimate,
+          customer: { name: args?.customerName, email: args?.customerEmail, phone: args?.customerPhone },
+        },
+      };
+    }
     case "submit_quote": {
       if (!args.name || !args.email || !args.phone)
         throw new Error("Name, email, and phone are required.");
@@ -532,6 +595,37 @@ export async function commitWrite(name: string, args: any): Promise<unknown> {
         source: "ai_assistant",
       });
       return { ok: true, quoteId: q.id, status: q.status };
+    }
+    case "save_cut_job": {
+      const n = normalized;
+      const job = await requestApi("POST", "/api/optimize/jobs", {
+        name: n.name,
+        materialId: n.materialId,
+        engine: n.engine,
+        input: { slabW: n.slabW, slabH: n.slabH, parts: n.partsIn },
+        result: n.result,
+        slabsUsed: n.result.slabsUsed,
+        yieldPct: n.result.yieldPct,
+        cost: n.result.cost,
+      });
+      let quoteId: string | null = null;
+      if (n.createEstimate) {
+        const msg =
+          `Optimized cut plan: ${n.result.slabsUsed} slab(s), ${n.result.yieldPct.toFixed(1)}% yield` +
+          (n.result.cost != null ? `, material ~$${n.result.cost.toFixed(0)}` : "") +
+          `. Parts: ${n.partsIn.map((p: any) => `${p.qty}× ${p.label} ${p.w}x${p.h}`).join("; ")}`;
+        const q = await requestApi("POST", "/api/quotes", {
+          name: n.customer.name || "Cut-plan estimate",
+          email: n.customer.email || "estimate@internal.local",
+          phone: n.customer.phone || "—",
+          material: n.materialName,
+          projectType: "Countertop fabrication",
+          message: msg,
+          source: "ai_assistant",
+        });
+        quoteId = q.id;
+      }
+      return { ok: true, jobId: job.id, quoteId, slabsUsed: n.result.slabsUsed, cost: n.result.cost };
     }
     default:
       throw new Error(`Unknown write tool: ${name}`);
