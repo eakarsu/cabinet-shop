@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, Loader2, Trash2 } from "lucide-react";
+import { Search, X, Loader2, ShieldCheck } from "lucide-react";
 import { AiLeadAssistant } from "@/components/admin/ai-lead-assistant";
 
 type Quote = {
@@ -18,14 +18,21 @@ type Quote = {
   source: string;
   status: string;
   createdAt: string;
+  version: number;
+  ownerId: string | null;
+  approvalState: string;
+  handoffState: string;
+  contactId: string | null;
 };
 
-const STATUSES = ["new", "contacted", "scheduled", "won", "lost"];
+type Staff = { id: string; name: string | null; email: string };
+
+const STATUSES = ["new", "qualified", "assigned", "contacted", "consultation_scheduled", "proposal", "approval_pending", "won", "lost"];
 const PAGE_SIZE = 10;
 const input =
   "w-full rounded-sm border border-input bg-background px-3 py-2 text-sm text-white outline-none focus:border-gold";
 
-export function EstimatesTable({ quotes }: { quotes: Quote[] }) {
+export function EstimatesTable({ quotes, staff }: { quotes: Quote[]; staff: Staff[] }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Quote | null>(null);
@@ -110,12 +117,12 @@ export function EstimatesTable({ quotes }: { quotes: Quote[] }) {
         </div>
       )}
 
-      {selected && <EstimateModal quote={selected} onClose={() => setSelected(null)} />}
+      {selected && <EstimateModal quote={selected} staff={staff} onClose={() => setSelected(null)} />}
     </div>
   );
 }
 
-function EstimateModal({ quote, onClose }: { quote: Quote; onClose: () => void }) {
+function EstimateModal({ quote, staff, onClose }: { quote: Quote; staff: Staff[]; onClose: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState(false);
@@ -126,21 +133,33 @@ function EstimateModal({ quote, onClose }: { quote: Quote; onClose: () => void }
     message: quote.message ?? "",
     adminNotes: quote.adminNotes ?? "",
   });
+  const [ownerId, setOwnerId] = useState(quote.ownerId ?? "");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
 
   async function update() {
     setBusy(true);
+    setError("");
     try {
+      const body = form.status === quote.status
+        ? { projectType: form.projectType, material: form.material, message: form.message, adminNotes: form.adminNotes, expectedVersion: quote.version }
+        : { status: form.status, reason, expectedVersion: quote.version };
       const res = await fetch(`/api/quotes/${quote.id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error((await res.json())?.error || "Update failed.");
       onClose(); router.refresh();
-    } finally { setBusy(false); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Update failed."); }
+    finally { setBusy(false); }
   }
-  async function remove() {
-    if (!confirm("Delete this estimate? This cannot be undone.")) return;
-    await fetch(`/api/quotes/${quote.id}`, { method: "DELETE" });
-    onClose(); router.refresh();
+  async function workflow(body: Record<string, unknown>) {
+    setBusy(true); setError("");
+    try {
+      const res = await fetch(`/api/quotes/${quote.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, expectedVersion: quote.version }) });
+      if (!res.ok) throw new Error((await res.json())?.error || "Workflow update failed.");
+      onClose(); router.refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Workflow update failed."); }
+    finally { setBusy(false); }
   }
 
   const Row = ({ label, value }: { label: string; value: string }) => (
@@ -165,6 +184,9 @@ function EstimateModal({ quote, onClose }: { quote: Quote; onClose: () => void }
         {!edit ? (
           <div className="grid grid-cols-2 gap-4">
             <Row label="Status" value={form.status} />
+            <Row label="Approval" value={quote.approvalState} />
+            <Row label="Handoff" value={quote.handoffState} />
+            <Row label="Owner" value={staff.find((person) => person.id === quote.ownerId)?.name || staff.find((person) => person.id === quote.ownerId)?.email || "Unassigned"} />
             <Row label="Project type" value={form.projectType} />
             <Row label="Material" value={form.material} />
             <Row label="Zip" value={quote.zip ?? ""} />
@@ -178,6 +200,7 @@ function EstimateModal({ quote, onClose }: { quote: Quote; onClose: () => void }
               <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={input}>
                 {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
+              {form.status === "lost" && <input value={reason} onChange={(e) => setReason(e.target.value)} className={`${input} mt-2`} placeholder="Required loss reason" />}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -204,10 +227,21 @@ function EstimateModal({ quote, onClose }: { quote: Quote; onClose: () => void }
           <AiLeadAssistant lead={quote} />
         </div>
 
+        <div className="mt-4 space-y-3 border-t border-border pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ownership and approval</p>
+          <div className="flex gap-2">
+            <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={input}>
+              <option value="">Choose active owner</option>
+              {staff.map((person) => <option key={person.id} value={person.id}>{person.name || person.email}</option>)}
+            </select>
+            <button disabled={busy || !ownerId} onClick={() => workflow({ ownerId })} className="btn-outline-gold px-3 text-xs">Assign</button>
+            <button disabled={busy || !["proposal", "approval_pending"].includes(quote.status)} onClick={() => workflow({ approvalDecision: "approve" })} className="btn-outline-gold flex items-center gap-1 px-3 text-xs"><ShieldCheck size={14} /> Approve</button>
+          </div>
+          {error && <p className="text-sm text-red-400">{error}</p>}
+        </div>
+
         <div className="mt-4 flex items-center justify-between">
-          <button onClick={remove} className="flex items-center gap-2 rounded-sm border border-border px-4 py-2.5 text-sm text-muted-foreground hover:text-red-400">
-            <Trash2 size={15} /> Delete
-          </button>
+          <span className="text-xs text-muted-foreground">Leads are retained for consent and audit history.</span>
           <div className="flex gap-3">
             <button onClick={onClose} className="btn-outline-gold px-5 py-2.5 text-sm">Cancel</button>
             {!edit ? (

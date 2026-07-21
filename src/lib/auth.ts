@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { consumeRateLimit } from "@/lib/rate-limit";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -13,12 +14,29 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
+        const email = credentials.email.trim().toLowerCase();
+        const budget = await consumeRateLimit("login", email, 10, 15 * 60 * 1000);
+        if (!budget.allowed) return null;
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email.toLowerCase() },
+          where: { email },
         });
-        if (!user) return null;
+        if (!user || !user.active || (user.lockedUntil && user.lockedUntil > new Date())) return null;
         const valid = await bcrypt.compare(credentials.password, user.password);
-        if (!valid) return null;
+        if (!valid) {
+          const failures = user.failedLoginCount + 1;
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              failedLoginCount: failures,
+              lockedUntil: failures >= 10 ? new Date(Date.now() + 15 * 60 * 1000) : null,
+            },
+          });
+          return null;
+        }
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { failedLoginCount: 0, lockedUntil: null },
+        });
         return {
           id: user.id,
           email: user.email,
@@ -34,16 +52,27 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as any).role;
         token.id = user.id;
+        token.active = true;
+      } else if (token.id) {
+        const current = await prisma.user.findUnique({
+          where: { id: String(token.id) },
+          select: { active: true, role: true },
+        });
+        token.active = !!current?.active;
+        if (current) token.role = current.role;
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
+      if (session.user && token.active !== false) {
         (session.user as any).role = token.role as string;
         (session.user as any).id = token.id as string;
+      } else {
+        (session as any).user = undefined;
       }
       return session;
     },
   },
   pages: { signIn: "/login", error: "/login" },
+  useSecureCookies: process.env.NODE_ENV === "production",
 };

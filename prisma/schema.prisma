@@ -12,24 +12,24 @@ datasource db {
 
 /// Materials & finishes shown on the Materials page and home preview.
 model Material {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  category  String // Granite | Quartz | Marble | Cabinetry
-  kind      String // "Natural Stone" | "Engineered" | "Built in-house"
-  blurb     String
-  origin    String?
-  priceTier String   @default("$$") // $ | $$ | $$$
-  features  String[]
-  swatch    String // tailwind gradient placeholder for a slab photo
-  imageUrl  String? // optional real photo; falls back to the swatch gradient
-  featured  Boolean  @default(false)
-  order     Int      @default(0)
+  id         String   @id @default(cuid())
+  slug       String   @unique
+  name       String
+  category   String // Granite | Quartz | Marble | Cabinetry
+  kind       String // "Natural Stone" | "Engineered" | "Built in-house"
+  blurb      String
+  origin     String?
+  priceTier  String   @default("$$") // $ | $$ | $$$
+  features   String[]
+  swatch     String // tailwind gradient placeholder for a slab photo
+  imageUrl   String? // optional real photo; falls back to the swatch gradient
+  featured   Boolean  @default(false)
+  order      Int      @default(0)
   // Cut-optimizer stock data (per full slab of this material)
   slabWidth  Float? // inches
   slabHeight Float? // inches
   slabCost   Float? // $ per slab
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 }
 
 /// Leftover usable pieces from a cut job, reusable as stock.
@@ -116,18 +116,43 @@ model Faq {
 
 /// Leads submitted through the contact / free-estimate form.
 model QuoteRequest {
-  id          String   @id @default(cuid())
-  name        String
-  email       String
-  phone       String
-  projectType String?
-  material    String?
-  zip         String?
-  message     String?
-  adminNotes  String? // internal staff notes, not shown to the customer
-  source      String   @default("website") // website | ai_assistant
-  status      String   @default("new") // new | contacted | scheduled | won | lost
-  createdAt   DateTime @default(now())
+  id                 String             @id @default(cuid())
+  name               String
+  email              String
+  phone              String
+  projectType        String?
+  material           String?
+  zip                String?
+  message            String?
+  adminNotes         String? // internal staff notes, not shown to the customer
+  source             String             @default("website") // website | ai_assistant
+  status             String             @default("new") // new | contacted | scheduled | won | lost
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  normalizedEmail    String
+  normalizedPhone    String
+  dedupeKey          String             @unique
+  region             String             @default("US")
+  consentBasis       String             @default("inquiry")
+  approvalState      String             @default("not_required")
+  handoffState       String             @default("pending")
+  firstTouchSource   String             @default("website")
+  lastTouchSource    String             @default("website")
+  campaign           String?
+  nextActionAt       DateTime?
+  closedAt           DateTime?
+  lostReason         String?
+  version            Int                @default(0)
+  contactId          String?
+  ownerId            String?
+  contact            Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  owner              User?              @relation("QuoteOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  attributionTouches AttributionTouch[]
+  outreachMessages   OutreachMessage[]
+
+  @@index([status, createdAt])
+  @@index([ownerId, status])
+  @@index([contactId])
 }
 
 /// A customer's saved/favorited materials.
@@ -153,29 +178,54 @@ model Setting {
 
 /// In-home / showroom design consultations booked by guests or the AI concierge.
 model Consultation {
-  id          String   @id @default(cuid())
-  name        String
-  email       String?
-  phone       String
-  date        DateTime
-  time        String // "HH:MM" 24h
-  projectType String?
-  material    String?
-  address     String?
-  notes       String?
-  status      String   @default("requested") // requested | confirmed | completed | cancelled
-  source      String   @default("website") // website | ai_assistant
-  createdAt   DateTime @default(now())
+  id              String    @id @default(cuid())
+  name            String
+  email           String?
+  phone           String
+  date            DateTime
+  time            String // "HH:MM" 24h
+  projectType     String?
+  material        String?
+  address         String?
+  notes           String?
+  status          String    @default("requested") // requested | confirmed | completed | cancelled
+  source          String    @default("website") // website | ai_assistant
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  dedupeKey       String    @unique
+  handoffState    String    @default("pending")
+  calendarEventId String?
+  retryCount      Int       @default(0)
+  nextRetryAt     DateTime?
+  version         Int       @default(0)
+  contactId       String?
+  ownerId         String?
+  contact         Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  owner           User?     @relation("ConsultationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([date, status])
+  @@index([ownerId, status])
+  @@index([contactId])
 }
 
 /// Login accounts — staff (admin) and customers.
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String?
-  role      String   @default("customer") // admin | customer
-  createdAt DateTime @default(now())
+  id                 String            @id @default(cuid())
+  email              String            @unique
+  password           String
+  name               String?
+  role               String            @default("customer") // admin | customer
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  active             Boolean           @default(true)
+  failedLoginCount   Int               @default(0)
+  lockedUntil        DateTime?
+  ownedQuotes        QuoteRequest[]    @relation("QuoteOwner")
+  ownedConsultations Consultation[]    @relation("ConsultationOwner")
+  ownedAccounts      Account[]         @relation("AccountOwner")
+  createdOutreach    OutreachMessage[] @relation("OutreachCreator")
+  reviewedOutreach   OutreachMessage[] @relation("OutreachReviewer")
+  auditEvents        AuditEvent[]
 }
 
 /// Audit log of every AI assistant interaction (mirrors the restaurant app).
@@ -188,4 +238,233 @@ model AiResult {
   error      String?
   durationMs Int?
   createdAt  DateTime @default(now())
+}
+
+/// Deduplicated person identity shared across website, CRM, email, calendar, and enrichment.
+model Contact {
+  id                 String             @id @default(cuid())
+  identityKey        String             @unique
+  normalizedEmail    String?
+  normalizedPhone    String?
+  name               String
+  region             String             @default("US")
+  marketingStatus    String             @default("unknown")
+  enrichedAt         DateTime?
+  enrichmentData     Json?
+  accountId          String?
+  account            Account?           @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  quotes             QuoteRequest[]
+  consultations      Consultation[]
+  consents           ConsentRecord[]
+  attributionTouches AttributionTouch[]
+  outreachMessages   OutreachMessage[]
+  privacyRequests    PrivacyRequest[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([normalizedEmail])
+  @@index([normalizedPhone])
+  @@index([accountId])
+}
+
+/// Organization/account ownership and handoff boundary.
+model Account {
+  id        String    @id @default(cuid())
+  name      String
+  domain    String?   @unique
+  status    String    @default("prospect")
+  version   Int       @default(0)
+  ownerId   String?
+  owner     User?     @relation("AccountOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  contacts  Contact[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([ownerId, status])
+}
+
+/// Immutable source/medium/campaign touches used for first- and last-touch attribution.
+model AttributionTouch {
+  id         String       @id @default(cuid())
+  quoteId    String
+  contactId  String?
+  source     String
+  medium     String?
+  campaign   String?
+  landingUrl String?
+  referrer   String?
+  occurredAt DateTime     @default(now())
+  quote      QuoteRequest @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  contact    Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId, occurredAt])
+}
+
+/// Consent evidence is append-safe per contact/channel/purpose; suppression wins over consent.
+model ConsentRecord {
+  id          String    @id @default(cuid())
+  contactId   String
+  channel     String
+  purpose     String
+  status      String
+  lawfulBasis String
+  region      String
+  source      String
+  evidence    Json?
+  recordedAt  DateTime  @default(now())
+  expiresAt   DateTime?
+  contact     Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, channel, purpose])
+  @@index([status, expiresAt])
+}
+
+/// Irreversible hashed opt-out identifiers used before every outreach send.
+model SuppressionEntry {
+  id        String   @id @default(cuid())
+  channel   String
+  valueHash String
+  reason    String
+  region    String   @default("US")
+  source    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([channel, valueHash])
+  @@index([active, channel])
+}
+
+/// Human-reviewed outbound communication. Draft creation never sends by itself.
+model OutreachMessage {
+  id              String        @id @default(cuid())
+  quoteId         String?
+  contactId       String
+  channel         String
+  recipientHash   String
+  subject         String?
+  body            String
+  status          String        @default("draft")
+  createdById     String
+  reviewedById    String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  attempts        Int           @default(0)
+  lastError       String?
+  quote           QuoteRequest? @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  contact         Contact       @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  createdBy       User          @relation("OutreachCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  reviewedBy      User?         @relation("OutreachReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([quoteId])
+}
+
+/// Connector configuration stores only the environment-variable name for credentials.
+model IntegrationEndpoint {
+  id                 String             @id @default(cuid())
+  name               String             @unique
+  provider           String
+  category           String
+  direction          String             @default("bidirectional")
+  baseUrl            String?
+  secretEnvKey       String?
+  enabled            Boolean            @default(false)
+  rateLimitPerMinute Int                @default(30)
+  events             IntegrationEvent[]
+  links              IntegrationLink[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([provider, category])
+}
+
+/// Transactional inbox/outbox item with idempotency and bounded exponential retry.
+model IntegrationEvent {
+  id             String              @id @default(cuid())
+  endpointId     String
+  direction      String
+  eventType      String
+  entityType     String
+  entityId       String?
+  externalId     String?
+  idempotencyKey String              @unique
+  payload        Json
+  status         String              @default("pending")
+  attempts       Int                 @default(0)
+  availableAt    DateTime            @default(now())
+  lockedAt       DateTime?
+  processedAt    DateTime?
+  lastError      String?
+  endpoint       IntegrationEndpoint @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([status, availableAt])
+  @@index([endpointId, externalId])
+}
+
+/// Stable local/external identity mapping prevents duplicate records during bidirectional sync.
+model IntegrationLink {
+  id         String              @id @default(cuid())
+  endpointId String
+  entityType String
+  localId    String
+  externalId String
+  endpoint   IntegrationEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([endpointId, entityType, localId])
+  @@unique([endpointId, entityType, externalId])
+}
+
+/// Regional access/deletion/correction request with an operational due date.
+model PrivacyRequest {
+  id            String    @id @default(cuid())
+  contactId     String?
+  requestType   String
+  region        String
+  status        String    @default("received")
+  requesterHash String
+  dueAt         DateTime
+  verifiedAt    DateTime?
+  completedAt   DateTime?
+  notes         String?
+  contact       Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, dueAt])
+}
+
+/// Persistent rate-limit windows work across server processes and restarts.
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  scope       String
+  subjectHash String
+  windowStart DateTime
+  count       Int      @default(0)
+  expiresAt   DateTime
+
+  @@unique([scope, subjectHash, windowStart])
+  @@index([expiresAt])
+}
+
+/// Security and sales mutations are recorded without raw credentials or message bodies.
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
 }

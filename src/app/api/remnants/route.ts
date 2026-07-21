@@ -5,6 +5,8 @@ import { getCaller, isPrivileged } from "@/lib/api-guard";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  if (!isPrivileged(await getCaller(req)))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { searchParams } = new URL(req.url);
   const materialId = searchParams.get("materialId");
   const includeUsed = searchParams.get("all") === "1";

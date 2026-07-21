@@ -1,0 +1,57 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cabinet_shop_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cabinet_shop_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/cabinet_shop_test?schema=public
+      NEXTAUTH_URL: http://127.0.0.1:3217
+      NEXTAUTH_SECRET: ci-auth-0123456789abcdef0123456789abcdef
+      INTERNAL_API_TOKEN: ci-api-abcdef0123456789abcdef0123456789
+      PRIVACY_HASH_SECRET: ci-hash-fedcba9876543210fedcba9876543210
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:validate
+      - run: npm run db:migrate
+      - name: Verify migration/schema parity
+        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+      - name: Verify legacy data-preserving migration
+        run: |
+          PGPASSWORD=postgres createdb -h 127.0.0.1 -U postgres cabinet_legacy_test
+          LEGACY_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/cabinet_legacy_test bash scripts/verify-legacy-migration.sh
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run build
+      - run: npm run security:audit
+      - run: docker build .

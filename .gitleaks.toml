@@ -1,0 +1,14 @@
+title = "Cabinet Shop secret detection"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore generated and dependency output only"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)\.next/''',
+  '''(^|/)test-results/''',
+  '''(^|/)playwright-report/''',
+]
+

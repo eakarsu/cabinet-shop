@@ -13,9 +13,10 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const material = await prisma.material.findUnique({ where: { slug: params.slug } });
+  const { slug } = await params;
+  const material = await prisma.material.findUnique({ where: { slug } });
   return {
     title: material
       ? `${material.name} — Heritage Cabinet & Stone`
@@ -26,9 +27,10 @@ export async function generateMetadata({
 export default async function MaterialDetailPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  const material = await prisma.material.findUnique({ where: { slug: params.slug } });
+  const { slug } = await params;
+  const material = await prisma.material.findUnique({ where: { slug } });
   if (!material) notFound();
 
   // Other colors in the same category.

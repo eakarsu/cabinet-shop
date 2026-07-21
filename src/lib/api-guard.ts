@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 
 export type Caller = {
   role: "admin" | "customer" | "internal" | null;
+  id: string | null;
   email: string | null;
 };
 
@@ -14,16 +15,21 @@ export type Caller = {
  */
 export async function getCaller(req: Request): Promise<Caller> {
   const token = req.headers.get("x-internal-token");
-  if (token && process.env.NEXTAUTH_SECRET && token === process.env.NEXTAUTH_SECRET) {
-    return { role: "internal", email: null };
+  if (token && process.env.INTERNAL_API_TOKEN && token === process.env.INTERNAL_API_TOKEN) {
+    return { role: "internal", id: null, email: null };
   }
   const session = await getServerSession(authOptions);
   const role = (session?.user as { role?: string } | undefined)?.role;
-  if (role === "admin") return { role: "admin", email: session?.user?.email ?? null };
-  if (session?.user) return { role: "customer", email: session.user.email ?? null };
-  return { role: null, email: null };
+  const id = (session?.user as { id?: string } | undefined)?.id ?? null;
+  if (role === "admin") return { role: "admin", id, email: session?.user?.email ?? null };
+  if (session?.user) return { role: "customer", id, email: session.user.email ?? null };
+  return { role: null, id: null, email: null };
 }
 
 export function isPrivileged(c: Caller) {
   return c.role === "admin" || c.role === "internal";
+}
+
+export function isAdmin(c: Caller) {
+  return c.role === "admin" && !!c.id;
 }

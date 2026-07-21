@@ -69,6 +69,9 @@ export function SiteFooter() {
         <Link href="/admin" className="hover:text-gold">
           Staff Admin
         </Link>
+        <Link href="/privacy" className="hover:text-gold">
+          Privacy &amp; opt-out
+        </Link>
       </div>
     </footer>
   );

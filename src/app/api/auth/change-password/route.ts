@@ -12,8 +12,8 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   const current = String(b?.currentPassword ?? "");
   const next = String(b?.newPassword ?? "");
-  if (next.length < 6)
-    return NextResponse.json({ error: "New password must be at least 6 characters." }, { status: 422 });
+  if (next.length < 12 || next.length > 72)
+    return NextResponse.json({ error: "New password must be 12-72 characters." }, { status: 422 });
 
   const user = await prisma.user.findUnique({ where: { email: session.user.email } });
   if (!user) return NextResponse.json({ error: "User not found." }, { status: 404 });

@@ -14,7 +14,7 @@ export default async function AdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await getServerSession(authOptions);
-  if (!session) redirect("/login?callbackUrl=/admin");
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
   if (session.user?.role !== "admin") redirect("/account");
 
   return (

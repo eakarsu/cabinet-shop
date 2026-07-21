@@ -10,10 +10,12 @@ export function RescheduleConsultation({
   id,
   date,
   time,
+  version,
 }: {
   id: string;
   date: string; // YYYY-MM-DD
   time: string;
+  version: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -29,7 +31,7 @@ export function RescheduleConsultation({
       const res = await fetch(`/api/consultations/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: d, time: t }),
+        body: JSON.stringify({ date: d, time: t, expectedVersion: version }),
       });
       if (!res.ok) throw new Error((await res.json())?.error || "Failed");
       setOpen(false);

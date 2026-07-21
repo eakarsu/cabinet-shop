@@ -85,7 +85,10 @@ export function RegisterForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-sm border border-input bg-background px-4 py-3 text-white outline-none focus:border-gold"
-                placeholder="At least 6 characters"
+                minLength={12}
+                maxLength={72}
+                autoComplete="new-password"
+                placeholder="12-72 characters"
               />
             </div>
 

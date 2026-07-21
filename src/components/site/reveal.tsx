@@ -12,7 +12,7 @@ export function Reveal({
   children: React.ReactNode;
   className?: string;
   delay?: number;
-  as?: keyof JSX.IntrinsicElements;
+  as?: React.ElementType;
 }) {
   const ref = useRef<HTMLElement | null>(null);
   const [shown, setShown] = useState(false);
@@ -33,7 +33,7 @@ export function Reveal({
     return () => io.disconnect();
   }, []);
 
-  const Component = Tag as any;
+  const Component = Tag;
   return (
     <Component
       ref={ref}

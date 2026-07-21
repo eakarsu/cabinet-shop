@@ -11,8 +11,8 @@ interface ChatMessage {
 
 interface PendingAction {
   name: string;
-  arguments: Record<string, unknown>;
   summary: string;
+  token: string;
 }
 
 const GREETING: ChatMessage = {
@@ -52,7 +52,7 @@ export function AssistantWidget() {
     setPending(null);
     await callAssistant({
       messages: messages.slice(1),
-      confirm: { name: action.name, arguments: action.arguments },
+      confirm: { token: action.token },
     });
   }
 

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Sparkles, Loader2, ClipboardCopy, Check } from "lucide-react";
 
 type Lead = {
+  id: string;
+  contactId: string | null;
   name: string;
   email: string;
   phone: string;
@@ -21,6 +23,7 @@ export function AiLeadAssistant({ lead }: { lead: Lead }) {
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [queued, setQueued] = useState(false);
 
   const promptFor = () =>
     `Lead details:\n` +
@@ -54,6 +57,19 @@ export function AiLeadAssistant({ lead }: { lead: Lead }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
+  }
+
+  async function submitForReview() {
+    if (!lead.contactId || !result) return;
+    setLoading("review"); setError("");
+    const response = await fetch("/api/sales/outreach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quoteId: lead.id, contactId: lead.contactId, channel: "email", subject: `Your ${lead.projectType || "project"} inquiry`, body: result }),
+    });
+    if (!response.ok) setError((await response.json())?.error || "Could not submit for review.");
+    else setQueued(true);
+    setLoading(null);
   }
 
   return (
@@ -107,6 +123,13 @@ export function AiLeadAssistant({ lead }: { lead: Lead }) {
               >
                 {copied ? <Check size={14} /> : <ClipboardCopy size={14} />}
                 {copied ? "Copied" : "Copy"}
+              </button>
+              <button
+                onClick={submitForReview}
+                disabled={!!loading || !lead.contactId || queued}
+                className="mt-2 ml-4 text-xs text-gold hover:underline disabled:opacity-50"
+              >
+                {queued ? "Submitted for independent review" : "Submit draft for review"}
               </button>
             </div>
           )}

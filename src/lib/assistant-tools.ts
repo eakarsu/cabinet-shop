@@ -47,37 +47,11 @@ export const ENDPOINTS: ApiEndpoint[] = [
   { id: "testimonials.list", method: "GET", path: "/api/testimonials", kind: "read", summary: "List customer reviews" },
   { id: "faqs.list", method: "GET", path: "/api/faqs", kind: "read", summary: "List FAQs", params: "query: search" },
   { id: "team.list", method: "GET", path: "/api/team", kind: "read", summary: "List team members" },
-  { id: "quotes.list", method: "GET", path: "/api/quotes", kind: "read", summary: "List estimate/quote requests", params: "query: status" },
-  { id: "consultations.list", method: "GET", path: "/api/consultations", kind: "read", summary: "List booked consultations", params: "query: date(YYYY-MM-DD), status" },
   { id: "settings.get", method: "GET", path: "/api/settings", kind: "read", summary: "Get company settings (name, phone, email, address, hours)" },
 
   // ---- writes (require confirmation) ----
   { id: "quote.create", method: "POST", path: "/api/quotes", kind: "write", summary: "Submit an estimate/quote request", params: "body: name, email, phone, projectType, material, zip, message" },
-  { id: "quote.update", method: "PUT", path: "/api/quotes/:id", kind: "write", summary: "Update an estimate (e.g. status)", params: "path: id; body: status, projectType, material, message" },
   { id: "consultation.create", method: "POST", path: "/api/consultations", kind: "write", summary: "Book a design consultation", params: "body: name, phone, email, date(YYYY-MM-DD), time(HH:MM), projectType, material, address, notes" },
-  { id: "consultation.update", method: "PUT", path: "/api/consultations/:id", kind: "write", summary: "Update/reschedule a consultation", params: "path: id; body: status, date, time, notes" },
-  { id: "consultation.cancel", method: "DELETE", path: "/api/consultations/:id", kind: "write", summary: "Cancel a consultation", params: "path: id" },
-
-  // ---- content management (admin) ----
-  { id: "material.create", method: "POST", path: "/api/materials", kind: "write", summary: "Add a material", params: "body: name, category(Granite|Quartz|Marble|Cabinetry), kind, blurb, origin, priceTier($|$$|$$$), features(comma list), swatch, featured(bool)" },
-  { id: "material.update", method: "PUT", path: "/api/materials/:id", kind: "write", summary: "Edit a material", params: "path: id; body: any material fields" },
-  { id: "material.delete", method: "DELETE", path: "/api/materials/:id", kind: "write", summary: "Delete a material", params: "path: id" },
-  { id: "project.create", method: "POST", path: "/api/projects", kind: "write", summary: "Add a gallery project", params: "body: title, tag, location, description, year, featured(bool), grad" },
-  { id: "project.update", method: "PUT", path: "/api/projects/:id", kind: "write", summary: "Edit a gallery project", params: "path: id; body: any project fields" },
-  { id: "project.delete", method: "DELETE", path: "/api/projects/:id", kind: "write", summary: "Delete a gallery project", params: "path: id" },
-  { id: "service.create", method: "POST", path: "/api/services", kind: "write", summary: "Add a service", params: "body: title, description, icon" },
-  { id: "service.update", method: "PUT", path: "/api/services/:id", kind: "write", summary: "Edit a service", params: "path: id; body: title, description, icon" },
-  { id: "service.delete", method: "DELETE", path: "/api/services/:id", kind: "write", summary: "Delete a service", params: "path: id" },
-  { id: "testimonial.create", method: "POST", path: "/api/testimonials", kind: "write", summary: "Add a review", params: "body: quote, name, detail, rating(1-5)" },
-  { id: "testimonial.update", method: "PUT", path: "/api/testimonials/:id", kind: "write", summary: "Edit a review", params: "path: id; body: quote, name, detail, rating" },
-  { id: "testimonial.delete", method: "DELETE", path: "/api/testimonials/:id", kind: "write", summary: "Delete a review", params: "path: id" },
-  { id: "team.create", method: "POST", path: "/api/team", kind: "write", summary: "Add a team member", params: "body: name, role, bio, initials" },
-  { id: "team.update", method: "PUT", path: "/api/team/:id", kind: "write", summary: "Edit a team member", params: "path: id; body: name, role, bio, initials" },
-  { id: "team.delete", method: "DELETE", path: "/api/team/:id", kind: "write", summary: "Delete a team member", params: "path: id" },
-  { id: "faq.create", method: "POST", path: "/api/faqs", kind: "write", summary: "Add an FAQ", params: "body: question, answer" },
-  { id: "faq.update", method: "PUT", path: "/api/faqs/:id", kind: "write", summary: "Edit an FAQ", params: "path: id; body: question, answer" },
-  { id: "faq.delete", method: "DELETE", path: "/api/faqs/:id", kind: "write", summary: "Delete an FAQ", params: "path: id" },
-  { id: "settings.update", method: "PUT", path: "/api/settings", kind: "write", summary: "Update company settings", params: "body: companyName, phone, email, address, hours(array)" },
 ];
 
 const ENDPOINTS_BY_ID = new Map(ENDPOINTS.map((e) => [e.id, e]));
@@ -256,45 +230,6 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
           body: { type: "object", description: "Request body fields per the catalog hint." },
         },
         required: ["endpoint"],
-      },
-    },
-  },
-  {
-    kind: "write",
-    function: {
-      name: "save_cut_job",
-      description:
-        "Run the cut optimizer AND save it as a job (and optionally create a costed estimate) in one step. Use when the user wants to record/save an optimization or turn it into a quote. Requires confirmation.",
-      parameters: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "Job name (e.g. customer or kitchen name)." },
-          material: { type: "string", description: "Material name to use its slab size + cost." },
-          slabWidth: { type: "number" },
-          slabHeight: { type: "number" },
-          kerf: { type: "number" },
-          engine: { type: "string", enum: ["shelf", "maxrects", "freeform"] },
-          allowRotate: { type: "boolean" },
-          useRemnants: { type: "boolean" },
-          parts: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                label: { type: "string" },
-                w: { type: "number" },
-                h: { type: "number" },
-                qty: { type: "integer" },
-              },
-              required: ["w", "h", "qty"],
-            },
-          },
-          createEstimate: { type: "boolean", description: "Also create a costed estimate/lead." },
-          customerName: { type: "string" },
-          customerEmail: { type: "string" },
-          customerPhone: { type: "string" },
-        },
-        required: ["parts"],
       },
     },
   },
@@ -499,30 +434,6 @@ export async function previewWrite(name: string, args: any): Promise<WritePrevie
         `. Phone: ${normalized.phone}.`;
       return { summary, normalized };
     }
-    case "save_cut_job": {
-      const c = await runCutFromArgs(args);
-      const createEstimate = !!args?.createEstimate;
-      const costStr = c.result.cost != null ? `, $${c.result.cost.toFixed(0)} material` : "";
-      const summary =
-        `Save cut job "${args?.name || c.materialName || "Cut job"}" — ` +
-        `${c.result.slabsUsed} slab(s), ${c.result.yieldPct.toFixed(1)}% yield${costStr}` +
-        (createEstimate ? ` and create an estimate${args?.customerName ? ` for ${args.customerName}` : ""}.` : ".");
-      return {
-        summary,
-        normalized: {
-          name: args?.name || c.materialName || "Cut job",
-          materialId: c.materialId,
-          engine: c.engine,
-          slabW: c.slabW,
-          slabH: c.slabH,
-          partsIn: c.partsIn,
-          result: c.result,
-          materialName: c.materialName,
-          createEstimate,
-          customer: { name: args?.customerName, email: args?.customerEmail, phone: args?.customerPhone },
-        },
-      };
-    }
     case "submit_quote": {
       if (!args.name || !args.email || !args.phone)
         throw new Error("Name, email, and phone are required.");
@@ -559,7 +470,7 @@ async function requestApi(method: string, path: string, body?: unknown): Promise
   // guarded write endpoints accept its calls.
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (process.env.NEXTAUTH_SECRET) headers["x-internal-token"] = process.env.NEXTAUTH_SECRET;
+  if (process.env.INTERNAL_API_TOKEN) headers["x-internal-token"] = process.env.INTERNAL_API_TOKEN;
   const res = await fetch(`${apiBase()}${path}`, {
     method,
     headers,
@@ -595,37 +506,6 @@ export async function commitWrite(name: string, args: any): Promise<unknown> {
         source: "ai_assistant",
       });
       return { ok: true, quoteId: q.id, status: q.status };
-    }
-    case "save_cut_job": {
-      const n = normalized;
-      const job = await requestApi("POST", "/api/optimize/jobs", {
-        name: n.name,
-        materialId: n.materialId,
-        engine: n.engine,
-        input: { slabW: n.slabW, slabH: n.slabH, parts: n.partsIn },
-        result: n.result,
-        slabsUsed: n.result.slabsUsed,
-        yieldPct: n.result.yieldPct,
-        cost: n.result.cost,
-      });
-      let quoteId: string | null = null;
-      if (n.createEstimate) {
-        const msg =
-          `Optimized cut plan: ${n.result.slabsUsed} slab(s), ${n.result.yieldPct.toFixed(1)}% yield` +
-          (n.result.cost != null ? `, material ~$${n.result.cost.toFixed(0)}` : "") +
-          `. Parts: ${n.partsIn.map((p: any) => `${p.qty}× ${p.label} ${p.w}x${p.h}`).join("; ")}`;
-        const q = await requestApi("POST", "/api/quotes", {
-          name: n.customer.name || "Cut-plan estimate",
-          email: n.customer.email || "estimate@internal.local",
-          phone: n.customer.phone || "—",
-          material: n.materialName,
-          projectType: "Countertop fabrication",
-          message: msg,
-          source: "ai_assistant",
-        });
-        quoteId = q.id;
-      }
-      return { ok: true, jobId: job.id, quoteId, slabsUsed: n.result.slabsUsed, cost: n.result.cost };
     }
     default:
       throw new Error(`Unknown write tool: ${name}`);

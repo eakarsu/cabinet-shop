@@ -1,5 +1,4 @@
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -115,128 +114,61 @@ const FAQS = [
   { question: "How do I get started?", answer: "Request a free estimate through our contact page or call the showroom — we'll schedule your in-home measure within a day or two." },
 ];
 
-const PROJECT_TYPES = ["Kitchen countertops", "Bathroom vanity", "Custom cabinetry", "Cabinet refacing", "Full kitchen remodel"];
-const MATERIAL_INTERESTS = ["Granite", "Quartz", "Marble", "Wood cabinetry", "Not sure yet"];
-const STATUSES = ["new", "contacted", "scheduled", "won", "lost"];
-const LEAD_NAMES = ["Avery Collins", "Ben Tanaka", "Chloe Reyes", "Dmitri Volkov", "Elena Marsh", "Felix Ward", "Gina Russo", "Harold Pine", "Imani Clarke", "Jonah Webb", "Keira Adams", "Liam Doyle", "Maya Singh", "Noah Bennett", "Olivia Frost", "Pedro Alvarez", "Quinn Harper"];
-
 async function main() {
   console.log("🌱 Seeding Heritage Cabinet & Stone database...");
-
-  // Clear existing data (idempotent re-seed)
-  await prisma.$transaction([
-    prisma.user.deleteMany(),
-    prisma.consultation.deleteMany(),
-    prisma.quoteRequest.deleteMany(),
-    prisma.faq.deleteMany(),
-    prisma.teamMember.deleteMany(),
-    prisma.testimonial.deleteMany(),
-    prisma.service.deleteMany(),
-    prisma.project.deleteMany(),
-    prisma.material.deleteMany(),
-  ]);
 
   // Slab stock data for the cut optimizer (stone slabs only; cabinetry = sheet goods, left null).
   const SLAB_COST: Record<string, number> = { "$": 500, "$$": 900, "$$$": 1400 };
   const slabSize = (category: string) =>
     category === "Marble" ? { w: 118, h: 55 } : category === "Cabinetry" ? null : { w: 126, h: 63 };
-  await prisma.material.createMany({
-    data: MATERIALS.map((m, i) => {
+  await Promise.all(MATERIALS.map((m, i) => {
       const size = slabSize(m.category);
-      return {
+      const data = {
         ...m,
         order: i,
         slabWidth: size?.w ?? null,
         slabHeight: size?.h ?? null,
         slabCost: size ? SLAB_COST[m.priceTier] ?? 900 : null,
       };
-    }),
-  });
+      return prisma.material.upsert({ where: { slug: m.slug }, create: data, update: data });
+    }));
   console.log(`  ✓ ${MATERIALS.length} materials`);
 
-  await prisma.project.createMany({
-    data: PROJECTS.map((p, i) => ({ ...p, order: i })),
-  });
+  if (await prisma.project.count() === 0)
+    await prisma.project.createMany({ data: PROJECTS.map((p, i) => ({ ...p, order: i })) });
   console.log(`  ✓ ${PROJECTS.length} gallery projects`);
 
-  await prisma.service.createMany({
-    data: SERVICES.map((s, i) => ({ ...s, order: i })),
-  });
+  await Promise.all(SERVICES.map((s, i) => prisma.service.upsert({
+    where: { slug: s.slug },
+    create: { ...s, order: i },
+    update: { ...s, order: i },
+  })));
   console.log(`  ✓ ${SERVICES.length} services`);
 
-  await prisma.testimonial.createMany({
-    data: TESTIMONIALS.map((t, i) => ({ ...t, rating: 5, order: i })),
-  });
+  if (await prisma.testimonial.count() === 0)
+    await prisma.testimonial.createMany({ data: TESTIMONIALS.map((t, i) => ({ ...t, rating: 5, order: i })) });
   console.log(`  ✓ ${TESTIMONIALS.length} testimonials`);
 
-  await prisma.teamMember.createMany({
-    data: TEAM.map((t, i) => ({ ...t, order: i })),
-  });
+  if (await prisma.teamMember.count() === 0)
+    await prisma.teamMember.createMany({ data: TEAM.map((t, i) => ({ ...t, order: i })) });
   console.log(`  ✓ ${TEAM.length} team members`);
 
-  await prisma.faq.createMany({
-    data: FAQS.map((f, i) => ({ ...f, order: i })),
-  });
+  if (await prisma.faq.count() === 0)
+    await prisma.faq.createMany({ data: FAQS.map((f, i) => ({ ...f, order: i })) });
   console.log(`  ✓ ${FAQS.length} FAQs`);
 
-  // Sample leads spread over the last ~3 months
-  const now = Date.now();
-  await prisma.quoteRequest.createMany({
-    data: LEAD_NAMES.map((name, i) => {
-      const first = name.split(" ")[0].toLowerCase();
-      return {
-        name,
-        email: `${first}@example.com`,
-        phone: `(555) ${String(200 + i).padStart(3, "0")}-${String(1000 + i * 7).slice(0, 4)}`,
-        projectType: PROJECT_TYPES[i % PROJECT_TYPES.length],
-        material: MATERIAL_INTERESTS[i % MATERIAL_INTERESTS.length],
-        zip: `${48000 + i}`,
-        message: "Interested in an estimate — please reach out to schedule a measure.",
-        status: STATUSES[i % STATUSES.length],
-        createdAt: new Date(now - i * 5 * 24 * 60 * 60 * 1000),
-      };
-    }),
-  });
-  console.log(`  ✓ ${LEAD_NAMES.length} sample quote requests`);
-
-  // Sample consultations spread across upcoming weekdays
-  const TIMES = ["09:00", "10:30", "13:00", "14:30", "16:00"];
-  const CONSULT_STATUSES = ["requested", "confirmed", "completed", "cancelled"];
-  await prisma.consultation.createMany({
-    data: LEAD_NAMES.map((name, i) => {
-      const first = name.split(" ")[0].toLowerCase();
-      const date = new Date(now + (i + 1) * 2 * 24 * 60 * 60 * 1000);
-      date.setHours(0, 0, 0, 0);
-      return {
-        name,
-        email: `${first}@example.com`,
-        phone: `(555) ${String(300 + i).padStart(3, "0")}-${String(2000 + i * 9).slice(0, 4)}`,
-        date,
-        time: TIMES[i % TIMES.length],
-        projectType: PROJECT_TYPES[i % PROJECT_TYPES.length],
-        material: MATERIAL_INTERESTS[i % MATERIAL_INTERESTS.length],
-        address: `${100 + i} Birch Lane, Riverton`,
-        notes: "Booked via seed data.",
-        status: CONSULT_STATUSES[i % CONSULT_STATUSES.length],
-      };
-    }),
-  });
-  console.log(`  ✓ ${LEAD_NAMES.length} sample consultations`);
-
-  // --- Login accounts -----------------------------------------------------
-  const adminHash = await bcrypt.hash("admin123", 10);
-  const customerHash = await bcrypt.hash("customer123", 10);
-
-  const users: { email: string; password: string; name: string; role: string }[] = [
-    { email: "admin@heritage.com", password: adminHash, name: "Frank Delgado", role: "admin" },
-    // Demo customers whose emails match seeded estimates/consultations, so the
-    // customer portal shows real data on first login.
-    { email: "avery@example.com", password: customerHash, name: "Avery Collins", role: "customer" },
-    { email: "ben@example.com", password: customerHash, name: "Ben Tanaka", role: "customer" },
-    { email: "chloe@example.com", password: customerHash, name: "Chloe Reyes", role: "customer" },
+  const connectorDefaults = [
+    { name: "primary-crm", provider: "crm", category: "crm", baseUrl: process.env.CRM_SYNC_URL || null, secretEnvKey: "CRM_SYNC_TOKEN", enabled: !!process.env.CRM_SYNC_URL },
+    { name: "transactional-email", provider: "email", category: "email", baseUrl: process.env.EMAIL_SYNC_URL || null, secretEnvKey: "EMAIL_SYNC_TOKEN", enabled: !!process.env.EMAIL_SYNC_URL },
+    { name: "design-calendar", provider: "calendar", category: "calendar", baseUrl: process.env.CALENDAR_SYNC_URL || null, secretEnvKey: "CALENDAR_SYNC_TOKEN", enabled: !!process.env.CALENDAR_SYNC_URL },
+    { name: "contact-enrichment", provider: "enrichment", category: "enrichment", baseUrl: process.env.ENRICHMENT_SYNC_URL || null, secretEnvKey: "ENRICHMENT_SYNC_TOKEN", enabled: !!process.env.ENRICHMENT_SYNC_URL },
   ];
-  await prisma.user.createMany({ data: users });
-  console.log(`  ✓ ${users.length} login accounts (1 admin, ${users.length - 1} customers)`);
+  await Promise.all(connectorDefaults.map((connector) => prisma.integrationEndpoint.upsert({
+    where: { name: connector.name },
+    create: connector,
+    update: connector,
+  })));
+  console.log("  ✓ connector definitions (disabled unless their URL is configured)");
 
   // Singleton site settings
   await prisma.setting.upsert({
@@ -254,9 +186,6 @@ async function main() {
   console.log("  ✓ site settings");
 
   console.log("✅ Seed complete.");
-  console.log("");
-  console.log("   Admin login:    admin@heritage.com / admin123");
-  console.log("   Customer login: avery@example.com / customer123");
 }
 
 main()

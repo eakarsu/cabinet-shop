@@ -4,7 +4,9 @@ import { getCaller, isPrivileged } from "@/lib/api-guard";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!isPrivileged(await getCaller(req)))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const jobs = await prisma.optimizationJob.findMany({
     orderBy: { createdAt: "desc" },
     take: 50,

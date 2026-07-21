@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { aiRateLimiter } from "@/lib/ai-helpers";
+import { createHash } from "node:crypto";
+import { consumeRateLimit, requestSubject } from "@/lib/rate-limit";
+import { getCaller, isAdmin } from "@/lib/api-guard";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL =
@@ -35,8 +37,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const rateKey = request.headers.get("x-forwarded-for") || "anon";
-  if (!aiRateLimiter(rateKey).allowed) {
+  const rateKey = requestSubject(request);
+  if (!(await consumeRateLimit("ai-helper", rateKey, 20, 60 * 60 * 1000)).allowed) {
     return NextResponse.json(
       { error: "AI request limit reached. Try again later." },
       { status: 429 }
@@ -52,6 +54,9 @@ export async function POST(request: NextRequest) {
   }
   if (!prompt.trim()) {
     return NextResponse.json({ error: "Nothing to work with." }, { status: 422 });
+  }
+  if (["lead_summary", "lead_reply"].includes(feature) && !isAdmin(await getCaller(request))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   try {
@@ -72,10 +77,10 @@ export async function POST(request: NextRequest) {
         temperature: 0.6,
         max_tokens: 600,
       }),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`OpenRouter ${res.status}: ${txt.slice(0, 200)}`);
+      throw new Error(`OpenRouter returned ${res.status}.`);
     }
     const json = await res.json();
     const text = json.choices?.[0]?.message?.content ?? "";
@@ -85,21 +90,21 @@ export async function POST(request: NextRequest) {
         data: {
           feature,
           model: OPENROUTER_MODEL,
-          input: { prompt } as any,
-          output: { text } as any,
+          input: { digest: createHash("sha256").update(prompt).digest("hex"), bytes: Buffer.byteLength(prompt) } as any,
+          output: { bytes: Buffer.byteLength(text) } as any,
           durationMs: Date.now() - t0,
         },
       })
       .catch(() => {});
 
     return NextResponse.json({ text });
-  } catch (e) {
+  } catch (_error) {
     await prisma.aiResult
       .create({
         data: {
           feature,
           model: OPENROUTER_MODEL,
-          error: e instanceof Error ? e.message : String(e),
+          error: "provider_or_validation_error",
           durationMs: Date.now() - t0,
         },
       })

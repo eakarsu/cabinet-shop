@@ -16,6 +16,7 @@ type Consultation = {
   address: string | null;
   source: string;
   status: string;
+  version: number;
 };
 
 const STATUSES = ["requested", "confirmed", "completed", "cancelled"];
@@ -123,16 +124,15 @@ function ConsultationModal({ c, onClose }: { c: Consultation; onClose: () => voi
     setBusy(true);
     try {
       const res = await fetch(`/api/consultations/${c.id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, expectedVersion: c.version }),
       });
       if (!res.ok) throw new Error();
       onClose(); router.refresh();
     } finally { setBusy(false); }
   }
   async function remove() {
-    if (!confirm("Delete this consultation? This cannot be undone.")) return;
-    await fetch(`/api/consultations/${c.id}`, { method: "DELETE" });
-    onClose(); router.refresh();
+    if (!confirm("Cancel this consultation? Its audit history will be retained.")) return;
+    await patch({ status: "cancelled" });
   }
 
   const Row = ({ label, value }: { label: string; value: string }) => (
@@ -190,7 +190,7 @@ function ConsultationModal({ c, onClose }: { c: Consultation; onClose: () => voi
 
         <div className="mt-4 flex items-center justify-between">
           <button onClick={remove} className="flex items-center gap-2 rounded-sm border border-border px-4 py-2.5 text-sm text-muted-foreground hover:text-red-400">
-            <Trash2 size={15} /> Delete
+            <Trash2 size={15} /> Cancel booking
           </button>
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-outline-gold px-5 py-2.5 text-sm">Cancel</button>

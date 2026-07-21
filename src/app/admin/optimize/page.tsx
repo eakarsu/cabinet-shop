@@ -50,6 +50,8 @@ export default function OptimizePage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
+  const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
+  const [requestedFollowUp, setRequestedFollowUp] = useState(false);
 
   useEffect(() => {
     fetch("/api/materials").then((r) => r.json()).then(setMaterials).catch(() => {});
@@ -146,21 +148,29 @@ export default function OptimizePage() {
 
   async function createEstimate() {
     if (!result) return;
+    if (!customer.name.trim() || !customer.email.trim() || !customer.phone.trim() || !requestedFollowUp) {
+      setMsg("Enter the requesting customer's contact details and confirm their request.");
+      return;
+    }
     setBusy("quote");
     const mat = materials.find((m) => m.id === materialId);
     const lines = parts.map((p) => `${p.qty}× ${p.label} ${p.w}×${p.h}`).join("; ");
     try {
-      await fetch("/api/quotes", {
+      const response = await fetch("/api/quotes", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "Cut-plan estimate", email: "estimate@internal.local", phone: "—",
+          name: customer.name, email: customer.email, phone: customer.phone,
           material: mat?.name ?? null, projectType: "Countertop fabrication",
           message: `Optimized plan: ${result.slabsUsed} slab(s), ${result.yieldPct.toFixed(1)}% yield${result.cost != null ? `, material cost ~$${result.cost.toFixed(0)}` : ""}. Parts: ${lines}`,
-          source: "ai_assistant",
+          source: "phone",
         }),
       });
+      if (!response.ok) throw new Error((await response.json())?.error || "Estimate creation failed.");
       setMsg("Estimate created in Estimates ✓");
-    } finally { setBusy(""); }
+      setCustomer({ name: "", email: "", phone: "" });
+      setRequestedFollowUp(false);
+    } catch (error) { setMsg(error instanceof Error ? error.message : "Estimate creation failed."); }
+    finally { setBusy(""); }
   }
 
   function loadJob(j: any) {
@@ -181,22 +191,23 @@ export default function OptimizePage() {
     const mat = materials.find((m) => m.id === materialId);
     const win = window.open("", "_blank");
     if (!win) return;
+    const materialName = escapeHtml(mat?.name ?? "Custom");
     const partRows = parts
-      .map((p) => `<tr><td>${p.label}</td><td>${p.w}"</td><td>${p.h}"</td><td>${p.qty}</td></tr>`)
+      .map((p) => `<tr><td>${escapeHtml(p.label)}</td><td>${p.w}"</td><td>${p.h}"</td><td>${p.qty}</td></tr>`)
       .join("");
     const bins = result.bins
       .map(
         (b, i) =>
           `<h3>${b.kind === "remnant" ? "Remnant" : "Slab"} ${i + 1} — ${b.w}"×${b.h}"</h3>
           <table><thead><tr><th>Part</th><th>X</th><th>Y</th><th>W</th><th>H</th><th>Rotated</th></tr></thead><tbody>${b.placements
-            .map((p) => `<tr><td>${p.label}</td><td>${p.x.toFixed(1)}</td><td>${p.y.toFixed(1)}</td><td>${p.w}"</td><td>${p.h}"</td><td>${p.rotated ? "90°" : "—"}</td></tr>`)
+            .map((p) => `<tr><td>${escapeHtml(p.label)}</td><td>${p.x.toFixed(1)}</td><td>${p.y.toFixed(1)}</td><td>${p.w}"</td><td>${p.h}"</td><td>${p.rotated ? "90°" : "—"}</td></tr>`)
             .join("")}</tbody></table>`
       )
       .join("");
-    win.document.write(`<!doctype html><html><head><title>Cut List — ${mat?.name ?? "Custom"}</title>
+    win.document.write(`<!doctype html><html><head><title>Cut List — ${materialName}</title>
       <style>body{font-family:Arial,sans-serif;margin:32px;color:#111}h1{margin:0 0 4px}table{border-collapse:collapse;width:100%;margin:8px 0 20px}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:13px}th{background:#f3f3f3}.sum{color:#555;margin-bottom:16px}</style>
       </head><body>
-      <h1>Cut List — ${mat?.name ?? "Custom slab"}</h1>
+      <h1>Cut List — ${materialName}</h1>
       <div class="sum">Slab ${result.slabW}"×${result.slabH}" · Slabs needed: <b>${result.slabsUsed}</b> · Yield: <b>${result.yieldPct.toFixed(1)}%</b> · Material cost: <b>${result.cost != null ? "$" + result.cost.toFixed(0) : "—"}</b></div>
       <h2>Parts</h2><table><thead><tr><th>Part</th><th>Width</th><th>Height</th><th>Qty</th></tr></thead><tbody>${partRows}</tbody></table>
       <h2>Cut layout</h2>${bins}
@@ -355,6 +366,13 @@ export default function OptimizePage() {
                 </div>
               )}
 
+              <div className="grid gap-3 rounded-md border border-border bg-card p-4 sm:grid-cols-3">
+                <input value={customer.name} onChange={(event) => setCustomer({ ...customer, name: event.target.value })} className={input} placeholder="Requesting customer name" aria-label="Requesting customer name" />
+                <input value={customer.email} onChange={(event) => setCustomer({ ...customer, email: event.target.value })} className={input} type="email" placeholder="Customer email" aria-label="Customer email" />
+                <input value={customer.phone} onChange={(event) => setCustomer({ ...customer, phone: event.target.value })} className={input} type="tel" placeholder="Customer phone" aria-label="Customer phone" />
+                <label className="flex items-center gap-2 text-xs text-muted-foreground sm:col-span-3"><input type="checkbox" checked={requestedFollowUp} onChange={(event) => setRequestedFollowUp(event.target.checked)} /> The customer requested this estimate and project follow-up.</label>
+              </div>
+
               <div className="flex flex-wrap gap-3">
                 <button onClick={saveJob} disabled={!!busy} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm">{busy === "job" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save job</button>
                 <button onClick={saveRemnants} disabled={!!busy} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm">{busy === "rem" ? <Loader2 size={14} className="animate-spin" /> : <Boxes size={14} />} Save remnants</button>
@@ -392,6 +410,10 @@ export default function OptimizePage() {
       </div>
     </>
   );
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 }
 
 function DimSelect({

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCaller, isPrivileged } from "@/lib/api-guard";
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
   if (!isPrivileged(await getCaller(req)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}));
@@ -17,7 +18,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
   if (!isPrivileged(await getCaller(req)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {

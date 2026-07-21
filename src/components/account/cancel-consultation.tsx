@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
-export function CancelConsultation({ id }: { id: string }) {
+export function CancelConsultation({ id, version }: { id: string; version: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -16,7 +16,7 @@ export function CancelConsultation({ id }: { id: string }) {
       const res = await fetch(`/api/consultations/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "cancelled" }),
+        body: JSON.stringify({ status: "cancelled", expectedVersion: version }),
       });
       if (!res.ok) throw new Error();
       startTransition(() => router.refresh());

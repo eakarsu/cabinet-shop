@@ -1,145 +1,79 @@
 # Heritage Cabinet & Stone
 
-A standalone, **database-driven** marketing site for a custom cabinet & stone
-countertop business — built with the **same stack as the restaurant app**
-(Next.js 14 App Router + TypeScript + Tailwind + Prisma + PostgreSQL + an
-OpenRouter-powered AI concierge with tool-calling).
+Production-oriented sales and customer-operations application for a cabinet and stone fabricator. It combines the public catalog and customer portal with a governed lead lifecycle, appointment scheduling, consent/suppression controls, independently reviewed outreach, conversion metrics, and durable CRM/email/calendar/enrichment synchronization.
 
-Independent project — does not import from or depend on any other codebase.
+## What is implemented
 
-## Stack
+- Public materials, gallery, services, quote, consultation, account, and privacy experiences.
+- Deduplicated contacts shared by quotes, consultations, CRM, calendar, email, and enrichment.
+- Explicit lead states: `new → qualified → assigned → contacted → consultation_scheduled → proposal → approval_pending → won/lost`.
+- Optimistic versions, required ownership, required loss reasons, independent proposal approval, handoff state, first/last-touch attribution, and immutable audit events.
+- Service-specific consent evidence, hashed global suppression, EU/UK explicit-consent rules for marketing, privacy-request deadlines, and a final permission check immediately before outreach.
+- Human-reviewed outreach: AI can draft text, but cannot approve or send it. The author and reviewer must be different people.
+- Signed, short-lived AI confirmation payloads; bounded history/tool output; persistent rate limits; no customer prompt or output bodies in AI audit logs.
+- Bidirectional connector inbox/outbox with HMAC-authenticated webhooks, idempotency keys, stable external links, timeouts, exponential retry, and terminal failure state.
+- PostgreSQL migrations that work from empty and preserve/backfill records from the former `prisma db push` schema.
+- Next.js 16, React 19, Prisma 6, Node 22, strict TypeScript, CI, Docker, and separate migration/application startup.
 
-- **Next.js 14** App Router (`src/app`), TypeScript, `@/*` alias
-- **Tailwind CSS** (dark charcoal + gold theme), shadcn-style `Button` + `cn()`
-- **Prisma + PostgreSQL** — all content is in the database
-- **lucide-react** icons, Playfair Display + Inter via `next/font`
-- **AI concierge** chat widget (same design/behavior as the restaurant app)
+## Local setup
 
-## Quick start
-
-```bash
-cd /Volumes/external/projects/cabinet-shop
-cp .env.example .env       # then edit values
-./start.sh                 # creates DB, pushes schema, seeds, runs dev server
-# → http://localhost:3000
-```
-
-`start.sh` mirrors the restaurant app: it checks PostgreSQL, creates
-`cabinet_shop_db`, runs `prisma generate` + `db push`, seeds if empty, frees the
-port, and starts the server.
-
-Manual equivalent:
+Prerequisites: Node 22 and PostgreSQL 17.
 
 ```bash
-npm install
-createdb cabinet_shop_db
-npm run db:push
-npm run db:seed
-npm run dev
+cp .env.example .env
+# Configure DATABASE_URL and generate three different secrets:
+# openssl rand -base64 48
+npm ci
+npm run db:migrate
+npm run db:seed                 # optional, non-destructive catalog/reference data
+BOOTSTRAP_ADMIN_EMAIL=you@example.com \
+BOOTSTRAP_ADMIN_NAME="Operator" \
+BOOTSTRAP_ADMIN_PASSWORD='a unique 12-72 character password' \
+npm run admin:bootstrap
+./start.sh
 ```
 
-## Environment (.env — same keys as the restaurant app)
+`start.sh` does not install packages, create/reset databases, kill processes, migrate, seed, or build. Opt into a checked-in migration or reference seed with `RUN_MIGRATIONS=1` or `RUN_SEED=1`. Administrator bootstrap never overwrites or promotes an existing account.
 
-| Key | Purpose |
-|-----|---------|
-| `DATABASE_URL` | PostgreSQL connection |
-| `NEXTAUTH_URL` | Base URL for server-to-server API calls + OpenRouter referer |
-| `NEXTAUTH_SECRET` | Reserved for parity with the restaurant app |
-| `OPENROUTER_API_KEY` | Enables the AI concierge (503 if unset; rest of site works) |
-| `OPENROUTER_MODEL` | Defaults to `anthropic/claude-3-5-sonnet-20241022` |
+## Sales controls
 
-## Database (every model seeded with 15+ rows)
+The staff UI at `/admin/quotes` exposes ownership, lifecycle transitions, loss reasons, proposal approval, and AI-assisted draft creation. `/admin/operations` shows conversion, suppression, sync failures, privacy deadlines, connector health, and the independent outreach review queue.
 
-| Model | Rows | Used by |
-|-------|------|---------|
-| `Material` | 16 | Home preview, Materials page, assistant |
-| `Project` | 16 | Gallery (filterable), assistant |
-| `Service` | 16 | Home "What we do", assistant |
-| `Testimonial` | 16 | Home reviews |
-| `TeamMember` | 15 | About page |
-| `Faq` | 15 | About page, assistant |
-| `QuoteRequest` | 17 | Contact form leads, assistant `submit_quote` |
-| `Consultation` | 17 | Bookings, assistant `book_consultation` |
-| `AiResult` | — | Audit log of assistant interactions |
+Public lead-list and appointment-list APIs are closed. Customers can retrieve only records matching their authenticated email. Quote deletion is disabled so consent, attribution, and audit history remain intact; leads close as `lost`. Customers may only reschedule an active appointment or transition it to `cancelled`.
 
-Reseed any time with `npm run db:seed` (idempotent — it clears then re-inserts).
+## Consent and privacy
 
-## Pages & APIs
+Submitting a quote records the narrow `sales_follow_up` basis needed to answer that requested project; it does not grant marketing consent. `/privacy` supports immediate email/SMS/phone opt-out plus access, correction, and deletion requests. Identifiers in suppression and privacy-request records are HMAC hashes. A suppression match always wins, including after approval but before connector delivery.
 
-| Route | Page |
-|-------|------|
-| `/` | Hero, services, materials, process, reviews, CTA (DB-driven) |
-| `/materials` | All materials from the DB with category + price tier |
-| `/gallery` | Filterable project gallery from the DB |
-| `/about` | Company story, team, stats, FAQ (DB-driven) |
-| `/contact` | Estimate form → `POST /api/quotes` |
-| `/admin` | Staff dashboard — overview + management of every feature |
+## Integrations
 
-### Admin dashboard (`/admin`)
+The optional seed creates disabled endpoint definitions for:
 
-A separate front-end (its own sidebar layout, no marketing chrome) for every
-database feature:
+- `primary-crm` (`CRM_SYNC_URL`, `CRM_SYNC_TOKEN`)
+- `transactional-email` (`EMAIL_SYNC_URL`, `EMAIL_SYNC_TOKEN`)
+- `design-calendar` (`CALENDAR_SYNC_URL`, `CALENDAR_SYNC_TOKEN`)
+- `contact-enrichment` (`ENRICHMENT_SYNC_URL`, `ENRICHMENT_SYNC_TOKEN`)
 
-| Route | Manage |
-|-------|--------|
-| `/admin` | Overview — counts + latest estimates/consultations |
-| `/admin/quotes` | Estimates — editable status (new→contacted→…→won/lost) |
-| `/admin/consultations` | Consultations — editable status |
-| `/admin/materials` | Materials catalog |
-| `/admin/projects` | Gallery projects |
-| `/admin/services` | Services |
-| `/admin/testimonials` | Reviews |
-| `/admin/team` | Team members |
-| `/admin/faqs` | FAQs |
+Credentials are never stored in PostgreSQL; `IntegrationEndpoint.secretEnvKey` stores only an environment-variable name. Outbound delivery is run separately:
 
-Status dropdowns write through `PUT /api/quotes/:id` and
-`PUT /api/consultations/:id`.
+```bash
+npm run integrations:work -- 100
+```
 
-### Authentication (NextAuth, like the restaurant app)
+Inbound providers post to `/api/integrations/webhooks/:provider` with `X-Heritage-Timestamp` (Unix seconds) and `X-Heritage-Signature`, the hex HMAC-SHA256 of `<timestamp>.<raw-body>`. Supported inbound events are `quote.upsert`, `consultation.upsert`, and `suppression.upsert`. Replayed external IDs are idempotent.
 
-Two roles, with **demo credentials pre-filled on `/login`**:
+## Validation
 
-| Role | Login | Lands on |
-|------|-------|----------|
-| Admin | `admin@heritage.com` / `admin123` | `/admin` (full dashboard) |
-| Customer | `avery@example.com` / `customer123` | `/account` (their own data) |
+```bash
+npm run db:validate
+npm run lint
+npm run typecheck
+npm run test:unit
+npm run test:integration          # DATABASE_URL must name a test database
+npm run test:e2e                  # DATABASE_URL must name a test database
+npm run build
+npm run security:audit
+gitleaks detect --source . --no-banner --redact
+```
 
-- `/admin/*` requires an **admin** session; customers are redirected to `/account`.
-- `/account` requires any session and shows that customer's own estimates +
-  consultations (matched by email).
-- The login page has Admin/Customer tabs that auto-fill the matching demo
-  credentials — just click **Sign in**.
-- Accounts live in the `User` table (bcrypt-hashed); seeded by `npm run db:seed`.
-- Set a strong `NEXTAUTH_SECRET` in `.env` for production.
-
-REST endpoints the pages **and the AI assistant** call:
-`GET /api/materials|projects|services|testimonials|faqs|team`,
-`GET|POST /api/quotes`, `GET|POST /api/consultations`,
-`PUT|DELETE /api/consultations/:id`, `POST /api/assistant`.
-
-## AI concierge (chat widget)
-
-A floating chat button (bottom-right, on every page) opens an assistant that
-works exactly like the restaurant app's:
-
-- **Reads** via tools: `search_materials`, `list_projects`,
-  `check_consultation_availability`, plus a generic `query_data` over the read
-  endpoint catalog (services, testimonials, FAQs, team, quotes, consultations).
-- **Writes** require confirmation: `book_consultation` and `submit_quote` (and a
-  generic `perform_action` to reschedule/cancel). The assistant returns a
-  `pendingAction`; the user clicks **Confirm**, and the action is committed by
-  calling the site's own API routes — same validation path as the web forms.
-- Every interaction is logged to the `AiResult` table; requests are rate-limited
-  (20/hr/visitor by default).
-
-Set `OPENROUTER_API_KEY` to enable it. Try: *"What white quartz do you have?"*,
-*"Book me a consultation next Tuesday afternoon for a kitchen remodel."*
-
-## Customize
-
-- **Content**: edit `prisma/seed.ts` and re-run `npm run db:seed`, or use the
-  POST APIs / Prisma Studio (`npm run db:studio`).
-- **Company info / nav / stats / steps**: `src/lib/site.ts`.
-- **Theme colors**: CSS variables at the top of `src/app/globals.css`.
-- **Material/gallery images**: currently CSS-gradient placeholders — swap in
-  `next/image` with real slab photos.
+CI repeats fresh and legacy migration checks, unit/integration/browser tests, lint, type checking, production build, dependency/secret scans, and the container build. See [OPERATIONS.md](./OPERATIONS.md) for release, backup, worker, incident, and privacy procedures.

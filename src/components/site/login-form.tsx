@@ -4,29 +4,15 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn, getSession } from "next-auth/react";
-import { Loader2, ShieldCheck, User } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-const DEMO = {
-  admin: { email: "admin@heritage.com", password: "admin123" },
-  customer: { email: "avery@example.com", password: "customer123" },
-};
+import { Loader2 } from "lucide-react";
 
 export function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const [role, setRole] = useState<"admin" | "customer">("admin");
-  const [email, setEmail] = useState(DEMO.admin.email);
-  const [password, setPassword] = useState(DEMO.admin.password);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  function pick(next: "admin" | "customer") {
-    setRole(next);
-    setEmail(DEMO[next].email);
-    setPassword(DEMO[next].password);
-    setError("");
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,9 +25,9 @@ export function LoginForm() {
       return;
     }
     const session = await getSession();
-    const dest =
-      params.get("callbackUrl") ||
-      ((session?.user as any)?.role === "admin" ? "/admin" : "/account");
+    const requested = params.get("callbackUrl");
+    const safeCallback = requested?.startsWith("/") && !requested.startsWith("//") ? requested : null;
+    const dest = safeCallback || ((session?.user as any)?.role === "admin" ? "/admin" : "/account");
     router.push(dest);
     router.refresh();
   }
@@ -64,36 +50,8 @@ export function LoginForm() {
         <div className="rounded-lg border border-border bg-card p-8">
           <h1 className="font-display text-2xl font-bold text-white">Sign in</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Choose an account — demo credentials are filled in for you.
+            Use the account created for you or register as a customer.
           </p>
-
-          {/* Role tabs */}
-          <div className="mt-6 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => pick("admin")}
-              className={cn(
-                "flex items-center justify-center gap-2 rounded-sm border px-3 py-2.5 text-sm transition-colors",
-                role === "admin"
-                  ? "border-gold bg-gold/15 text-gold"
-                  : "border-border text-muted-foreground hover:text-white"
-              )}
-            >
-              <ShieldCheck size={16} /> Admin
-            </button>
-            <button
-              type="button"
-              onClick={() => pick("customer")}
-              className={cn(
-                "flex items-center justify-center gap-2 rounded-sm border px-3 py-2.5 text-sm transition-colors",
-                role === "customer"
-                  ? "border-gold bg-gold/15 text-gold"
-                  : "border-border text-muted-foreground hover:text-white"
-              )}
-            >
-              <User size={16} /> Customer
-            </button>
-          </div>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div>
@@ -102,6 +60,8 @@ export function LoginForm() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
                 className="w-full rounded-sm border border-input bg-background px-4 py-3 text-white outline-none focus:border-gold"
               />
             </div>
@@ -111,6 +71,8 @@ export function LoginForm() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
                 className="w-full rounded-sm border border-input bg-background px-4 py-3 text-white outline-none focus:border-gold"
               />
             </div>
@@ -123,15 +85,9 @@ export function LoginForm() {
               className="btn-gold flex w-full items-center justify-center gap-2 px-8 py-3.5"
             >
               {loading && <Loader2 size={16} className="animate-spin" />}
-              Sign in {role === "admin" ? "to Admin" : "to My Account"}
+              Sign in
             </button>
           </form>
-
-          <div className="mt-6 rounded-sm border border-border bg-background p-4 text-xs text-muted-foreground">
-            <p className="font-semibold text-gold">Demo credentials</p>
-            <p className="mt-1">Admin — admin@heritage.com / admin123</p>
-            <p>Customer — avery@example.com / customer123</p>
-          </div>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             New customer?{" "}

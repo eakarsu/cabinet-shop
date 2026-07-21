@@ -16,6 +16,8 @@ import {
   Settings,
   Scissors,
   Boxes,
+  ShieldCheck,
+  Building2,
   ExternalLink,
   Menu,
   X,
@@ -25,7 +27,9 @@ import { cn } from "@/lib/utils";
 const LINKS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/quotes", label: "Estimates", icon: FileText },
+  { href: "/admin/accounts", label: "Accounts", icon: Building2 },
   { href: "/admin/consultations", label: "Consultations", icon: CalendarClock },
+  { href: "/admin/operations", label: "Sales Controls", icon: ShieldCheck },
   { href: "/admin/materials", label: "Materials", icon: Gem },
   { href: "/admin/projects", label: "Gallery", icon: Images },
   { href: "/admin/services", label: "Services", icon: Wrench },

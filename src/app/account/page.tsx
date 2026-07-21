@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 import { FileText, CalendarClock, Gem, Images, Phone, ArrowRight } from "lucide-react";
 import { authOptions } from "@/lib/auth";

@@ -64,9 +64,10 @@ export default async function AccountConsultationsPage() {
                         id={c.id}
                         date={new Date(c.date).toISOString().slice(0, 10)}
                         time={c.time}
+                        version={c.version}
                       />
                     )}
-                    {upcoming && <CancelConsultation id={c.id} />}
+                    {upcoming && <CancelConsultation id={c.id} version={c.version} />}
                   </div>
                 </div>
               );

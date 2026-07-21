@@ -73,6 +73,10 @@ export function QuoteForm() {
       onSubmit={onSubmit}
       className="space-y-5 rounded-lg border border-border bg-card p-8"
     >
+      <div className="hidden" aria-hidden="true">
+        <label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
+      </div>
+      <input type="hidden" name="region" value="US" />
       <div className="grid gap-5 sm:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm text-muted-foreground">
@@ -164,8 +168,8 @@ export function QuoteForm() {
         {status === "sending" ? "Sending..." : "Request My Free Estimate"}
       </button>
       <p className="text-xs text-muted-foreground">
-        By submitting you agree to be contacted about your project. We never
-        share your information.
+        By submitting you authorize contact about this project only. Marketing
+        requires separate consent, and you can opt out or submit a privacy request at any time.
       </p>
     </form>
   );

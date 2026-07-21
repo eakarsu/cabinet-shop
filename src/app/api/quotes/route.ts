@@ -1,50 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getCaller, isPrivileged } from "@/lib/api-guard";
+import { consumeRateLimit, requestSubject } from "@/lib/rate-limit";
+import { createQuote, publicQuote } from "@/lib/sales-workflow";
+import { PolicyError } from "@/lib/sales-policy";
 import { notifyTeam } from "@/lib/notify";
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status");
+  const caller = await getCaller(req);
+  if (!caller.role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const status = new URL(req.url).searchParams.get("status");
   const quotes = await prisma.quoteRequest.findMany({
-    where: status ? { status } : {},
+    where: {
+      ...(status ? { status } : {}),
+      ...(!isPrivileged(caller) ? { normalizedEmail: caller.email?.toLowerCase() } : {}),
+    },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 100,
   });
-  return NextResponse.json(quotes);
+  return NextResponse.json(isPrivileged(caller) ? quotes : quotes.map(publicQuote));
 }
 
 export async function POST(req: NextRequest) {
+  const budget = await consumeRateLimit("quote", requestSubject(req), 10, 60 * 60 * 1000);
+  if (!budget.allowed) return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
   const body = await req.json().catch(() => null);
-  const name = String(body?.name ?? "").trim();
-  const email = String(body?.email ?? "").trim();
-  const phone = String(body?.phone ?? "").trim();
-  if (!name || !email || !phone) {
-    return NextResponse.json(
-      { error: "Name, email, and phone are required." },
-      { status: 422 }
-    );
+  if (body?.website) return NextResponse.json({ ok: true }, { status: 202 });
+  try {
+    const result = await createQuote({
+      ...body,
+      idempotencyKey: req.headers.get("idempotency-key"),
+      landingUrl: req.headers.get("referer"),
+    });
+    if (result.created) {
+      await notifyTeam(`New estimate request — ${result.quote.name}`, [
+        `Lead ID: ${result.quote.id}`,
+        `Project: ${result.quote.projectType ?? "—"}`,
+        `Material: ${result.quote.material ?? "—"}`,
+        `Source: ${result.quote.source}`,
+      ]);
+    }
+    return NextResponse.json(publicQuote(result.quote), { status: result.created ? 201 : 200 });
+  } catch (error) {
+    const status = error instanceof PolicyError ? error.status : 500;
+    return NextResponse.json({ error: status === 500 ? "Unable to submit request." : (error as Error).message }, { status });
   }
-  const quote = await prisma.quoteRequest.create({
-    data: {
-      name,
-      email,
-      phone,
-      projectType: body.projectType ?? null,
-      material: body.material ?? null,
-      zip: body.zip ?? null,
-      message: body.message ?? null,
-      source: body.source === "ai_assistant" ? "ai_assistant" : "website",
-    },
-  });
-  await notifyTeam(`New estimate request — ${quote.name}`, [
-    `Name: ${quote.name}`,
-    `Email: ${quote.email}`,
-    `Phone: ${quote.phone}`,
-    `Project: ${quote.projectType ?? "—"}`,
-    `Material: ${quote.material ?? "—"}`,
-    `Zip: ${quote.zip ?? "—"}`,
-    `Source: ${quote.source}`,
-    `Message: ${quote.message ?? "(none)"}`,
-  ]);
-  return NextResponse.json(quote, { status: 201 });
 }

@@ -6,7 +6,10 @@ import { EstimatesTable } from "@/components/admin/estimates-table";
 export const dynamic = "force-dynamic";
 
 export default async function AdminQuotesPage() {
-  const quotes = await prisma.quoteRequest.findMany({ orderBy: { createdAt: "desc" } });
+  const [quotes, staff] = await Promise.all([
+    prisma.quoteRequest.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.user.findMany({ where: { role: "admin", active: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
+  ]);
   const serialized = quotes.map((q) => ({
     ...q,
     createdAt: q.createdAt.toISOString(),
@@ -39,7 +42,7 @@ export default async function AdminQuotesPage() {
         }
       />
       <div className="p-6 sm:p-8">
-        <EstimatesTable quotes={serialized} />
+        <EstimatesTable quotes={serialized} staff={staff} />
       </div>
     </>
   );
