@@ -80,6 +80,15 @@ export function LoginForm() {
             {error && <p className="text-sm text-red-400">{error}</p>}
 
             <button
+              type="button"
+              onClick={() => { setEmail(process.env.NEXT_PUBLIC_DEMO_EMAIL || ''); setPassword(process.env.NEXT_PUBLIC_DEMO_PASSWORD || ''); }}
+              disabled={!process.env.NEXT_PUBLIC_DEMO_EMAIL || !process.env.NEXT_PUBLIC_DEMO_PASSWORD}
+              aria-label="Auto Fill Demo Credentials"
+              style={{ width: '100%', marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', border: '1px solid currentColor', background: 'transparent', cursor: 'pointer' }}
+            >
+              Auto Fill Demo Credentials
+            </button>
+            <button
               type="submit"
               disabled={loading}
               className="btn-gold flex w-full items-center justify-center gap-2 px-8 py-3.5"
