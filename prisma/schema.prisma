@@ -230,14 +230,17 @@ model User {
 
 /// Audit log of every AI assistant interaction (mirrors the restaurant app).
 model AiResult {
-  id         String   @id @default(cuid())
-  feature    String
-  model      String?
-  input      Json?
-  output     Json?
-  error      String?
-  durationMs Int?
-  createdAt  DateTime @default(now())
+  id              String   @id @default(cuid())
+  feature         String
+  model           String?
+  input           Json?
+  output          Json?
+  error           String?
+  durationMs      Int?
+  userId          String?
+  providerReceipt String?
+  result          String?
+  createdAt       DateTime @default(now())
 }
 
 /// Deduplicated person identity shared across website, CRM, email, calendar, and enrichment.

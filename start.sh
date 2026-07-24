@@ -1,50 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
-fi
-
-if [[ ! -d node_modules ]]; then
-  echo "Dependencies are missing. Run: npm ci"
-  exit 1
-fi
-
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "DATABASE_URL is required. Copy .env.example to .env and configure it."
-  exit 1
-fi
-
-if [[ "${RUN_MIGRATIONS:-0}" == "1" ]]; then
-  echo "Applying checked-in database migrations..."
-  npm run db:migrate
-fi
-
-if [[ "${RUN_SEED:-0}" == "1" ]]; then
-  echo "Loading non-destructive catalog/reference data..."
-  npm run db:seed
-fi
-
-if [[ "${NODE_ENV:-development}" == "test" && -f .next/standalone/server.js ]]; then
-  : "${JWT_SECRET:?JWT_SECRET is required for test runtime secret isolation}"
-  : "${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required for test runtime secret isolation}"
-  export INTERNAL_API_TOKEN="${INTERNAL_API_TOKEN:-$JWT_SECRET}"
-  export PRIVACY_HASH_SECRET="${PRIVACY_HASH_SECRET:-$JWT_REFRESH_SECRET}"
-  export NEXTAUTH_URL="http://localhost:${PORT:-3000}"
-  export HOSTNAME="${HOST:-127.0.0.1}"
-  exec npm run start
-fi
-
-if [[ "${NODE_ENV:-development}" == "production" ]]; then
-  if [[ ! -f .next/standalone/server.js ]]; then
-    echo "Production build is missing. Run: npm run build"
-    exit 1
-  fi
-  export HOSTNAME="${HOST:-127.0.0.1}"
-  exec npm run start
-fi
-
-exec npm run dev -- --webpack --hostname "${HOST:-127.0.0.1}" --port "${PORT:-3000}"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT_DIR"
+[[ -f .env ]] || { echo '.env is required' >&2; exit 1; }
+migration_override="${RUN_MIGRATIONS:-}"
+set -a; source .env; set +a
+[[ -z "$migration_override" ]] || export RUN_MIGRATIONS="$migration_override"
+required() { [[ -n "${!1:-}" ]] || { echo "$1 is required" >&2; exit 1; }; }
+configure() {
+  local name
+  for name in DATABASE_URL NEXTAUTH_SECRET INTERNAL_API_TOKEN PRIVACY_HASH_SECRET BACKEND_PORT FRONTEND_PORT OPENROUTER_API_KEY OPENROUTER_MODEL OPENROUTER_BASE_URL; do required "$name"; done
+  [[ "$OPENROUTER_BASE_URL" == 'https://openrouter.ai/api/v1' ]] || { echo 'OPENROUTER_BASE_URL is invalid' >&2; exit 1; }
+  [[ "$BACKEND_PORT" =~ ^[0-9]+$ && "$FRONTEND_PORT" =~ ^[0-9]+$ && "$BACKEND_PORT" != "$FRONTEND_PORT" ]] || { echo 'runtime ports must be distinct numbers' >&2; exit 1; }
+  [[ ${#NEXTAUTH_SECRET} -ge 32 && ${#INTERNAL_API_TOKEN} -ge 32 && ${#PRIVACY_HASH_SECRET} -ge 32 ]] || { echo 'runtime secrets must contain at least 32 characters' >&2; exit 1; }
+  [[ "$NEXTAUTH_SECRET" != "$INTERNAL_API_TOKEN" && "$NEXTAUTH_SECRET" != "$PRIVACY_HASH_SECRET" && "$INTERNAL_API_TOKEN" != "$PRIVACY_HASH_SECRET" ]] || { echo 'runtime secrets must be distinct' >&2; exit 1; }
+}
+case "${1:-start}" in
+  check) configure; npm run lint; npm run typecheck; npm test;;
+  migrate) configure; [[ "${RUN_MIGRATIONS:-0}" == 1 ]] || { echo 'Refusing migration: set RUN_MIGRATIONS=1 explicitly' >&2; exit 1; }; npm run db:migrate;;
+  start)
+    configure
+    [[ -d node_modules ]] || { echo 'dependencies are not installed' >&2; exit 1; }
+    for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then echo "runtime port $port is occupied" >&2; exit 1; fi; done
+    psql "$DATABASE_URL" -Atqc 'SELECT 1' >/dev/null
+    echo "Starting Cabinet Shop API on $BACKEND_PORT and UI on $FRONTEND_PORT; persistent state is unchanged."
+    exec node runtime-launcher.js;;
+  *) echo "Usage: $0 [check|migrate|start]" >&2; exit 64;;
+esac
