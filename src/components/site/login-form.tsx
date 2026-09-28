@@ -94,7 +94,7 @@ export function LoginForm() {
               className="btn-gold flex w-full items-center justify-center gap-2 px-8 py-3.5"
             >
               {loading && <Loader2 size={16} className="animate-spin" />}
-              Sign in
+              Sign In
             </button>
           </form>
 
