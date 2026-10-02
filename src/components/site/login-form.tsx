@@ -14,6 +14,15 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  async function routeAfterSignIn() {
+    const session = await getSession();
+    const requested = params.get("callbackUrl");
+    const safeCallback = requested?.startsWith("/") && !requested.startsWith("//") ? requested : null;
+    const dest = safeCallback || ((session?.user as any)?.role === "admin" ? "/admin" : "/account");
+    router.push(dest);
+    router.refresh();
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -24,12 +33,43 @@ export function LoginForm() {
       setLoading(false);
       return;
     }
-    const session = await getSession();
-    const requested = params.get("callbackUrl");
-    const safeCallback = requested?.startsWith("/") && !requested.startsWith("//") ? requested : null;
-    const dest = safeCallback || ((session?.user as any)?.role === "admin" ? "/admin" : "/account");
-    router.push(dest);
-    router.refresh();
+    await routeAfterSignIn();
+  }
+
+  async function onLocalDemo() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/local-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Local-Login": "fill" },
+        credentials: "same-origin",
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { email?: string; password?: string; error?: string }
+        | null;
+      if (!res.ok || !data?.email || !data?.password) {
+        setError(data?.error || "Local demo credentials are unavailable.");
+        setLoading(false);
+        return;
+      }
+      setEmail(data.email);
+      setPassword(data.password);
+      const signInRes = await signIn("credentials", {
+        email: data.email,
+        password: data.password,
+        redirect: false,
+      });
+      if (signInRes?.error) {
+        setError("Invalid email or password.");
+        setLoading(false);
+        return;
+      }
+      await routeAfterSignIn();
+    } catch {
+      setError("Local demo credentials are unavailable.");
+      setLoading(false);
+    }
   }
 
   return (
@@ -81,12 +121,11 @@ export function LoginForm() {
 
             <button
               type="button"
-              onClick={() => { setEmail(process.env.NEXT_PUBLIC_DEMO_EMAIL || ''); setPassword(process.env.NEXT_PUBLIC_DEMO_PASSWORD || ''); }}
-              disabled={!process.env.NEXT_PUBLIC_DEMO_EMAIL || !process.env.NEXT_PUBLIC_DEMO_PASSWORD}
-              aria-label="Auto Fill Demo Credentials"
-              style={{ width: '100%', marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', border: '1px solid currentColor', background: 'transparent', cursor: 'pointer' }}
+              onClick={onLocalDemo}
+              disabled={loading}
+              className="w-full rounded-sm border border-gold/60 px-4 py-3 text-sm font-semibold text-gold transition hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Auto Fill Demo Credentials
+              Fill local demo credentials
             </button>
             <button
               type="submit"
