@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Send, X, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import NativeAIReport, { reportValue } from "@/components/NativeAIReport";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -20,6 +21,12 @@ const GREETING: ChatMessage = {
   content:
     "Hi! I'm the Heritage concierge. I can help you compare granite, quartz, and marble, browse our past projects, book a free design consultation, or start an estimate. What are you working on?",
 };
+
+const EXAMPLE_QUESTIONS = [
+  { label: "Compare countertop materials", prompt: "I am planning a busy family kitchen with warm wood cabinets. Compare granite, quartz, and marble for daily cooking, cleaning, and upkeep. What details should I confirm before choosing?" },
+  { label: "Plan a consultation", prompt: "I want to plan a small kitchen update with new cabinets and countertops. What measurements, photos, budget details, and timeline should I prepare before booking a design consultation?" },
+  { label: "Explore cabinet styles", prompt: "I have a compact kitchen with limited daylight and want a calm, practical look. What cabinet colors, door styles, and countertop pairings should I consider, and what trade-offs should I expect?" },
+];
 
 export function AssistantWidget() {
   const [open, setOpen] = useState(false);
@@ -136,7 +143,9 @@ export function AssistantWidget() {
                       : "bg-card text-foreground"
                   )}
                 >
-                  {m.content}
+                  {m.role === "assistant" && reportValue(m.content) !== m.content
+                    ? <NativeAIReport value={m.content} title="Concierge response" />
+                    : m.content}
                 </div>
               </div>
             ))}
@@ -173,6 +182,14 @@ export function AssistantWidget() {
             )}
           </div>
 
+          <div className="flex flex-wrap gap-2 border-t border-border px-3 pt-3" aria-label="Example questions">
+            {EXAMPLE_QUESTIONS.map(example => (
+              <button key={example.label} type="button" disabled={loading} onClick={() => setInput(example.prompt)}
+                className="rounded-sm border border-gold/40 px-2 py-1.5 text-xs text-gold disabled:opacity-50">
+                Fill: {example.label}
+              </button>
+            ))}
+          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault();

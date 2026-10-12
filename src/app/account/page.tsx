@@ -5,16 +5,19 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { COMPANY } from "@/lib/site";
 import { AiDesignAssistant } from "@/components/account/ai-design-assistant";
+import { AIReportHistory } from "@/components/AIReportHistory";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountDashboard() {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email ?? "";
-  const [quotes, consultations, featured] = await Promise.all([
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  const [quotes, consultations, featured, reports] = await Promise.all([
     prisma.quoteRequest.findMany({ where: { email }, orderBy: { createdAt: "desc" } }),
     prisma.consultation.findMany({ where: { email }, orderBy: { date: "asc" } }),
     prisma.material.findMany({ where: { featured: true }, orderBy: { order: "asc" }, take: 3 }),
+    prisma.aiResult.findMany({ where: { userId: userId ?? "", feature: { in: ["design_ideas", "material_recommender"] }, result: { not: null } }, select: { id: true, feature: true, result: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 10 }),
   ]);
 
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
@@ -70,6 +73,7 @@ export default async function AccountDashboard() {
 
       {/* AI design assistant */}
       <AiDesignAssistant />
+      <section><h2 className="mb-3 text-xl font-semibold text-white">Saved design reports</h2><AIReportHistory reports={reports} /></section>
 
       {/* Summary */}
       <div className="grid gap-4 sm:grid-cols-3">

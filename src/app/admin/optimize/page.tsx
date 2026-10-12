@@ -49,13 +49,24 @@ export default function OptimizePage() {
   const [result, setResult] = useState<OptimizeResult | null>(null);
   const [jobs, setJobs] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState("");
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
   const [requestedFollowUp, setRequestedFollowUp] = useState(false);
 
   useEffect(() => {
-    fetch("/api/materials").then((r) => r.json()).then(setMaterials).catch(() => {});
-    fetch("/api/optimize/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
+    async function load<T>(url: string, update: (rows: T[]) => void) {
+      try {
+        const response = await fetch(url);
+        const payload: unknown = await response.json();
+        if (!response.ok || !Array.isArray(payload)) throw new Error(`Could not load ${url}.`);
+        update(payload as T[]);
+      } catch {
+        setLoadError(`Could not load ${url}. Please retry after checking the server and your access.`);
+      }
+    }
+    void load<Material>("/api/materials", setMaterials);
+    void load<any>("/api/optimize/jobs", setJobs);
   }, []);
 
   function pickMaterial(id: string) {
@@ -78,9 +89,12 @@ export default function OptimizePage() {
   useEffect(() => {
     if (useRemnants && materialId) {
       fetch(`/api/remnants?materialId=${materialId}`)
-        .then((r) => r.json())
-        .then((rs) => setRemnantStock(rs.map((r: any) => ({ w: r.w, h: r.h, id: r.id }))))
-        .catch(() => setRemnantStock([]));
+        .then(async (response) => {
+          const payload: unknown = await response.json();
+          if (!response.ok || !Array.isArray(payload)) throw new Error("Could not load remnants.");
+          setRemnantStock(payload.map((r: any) => ({ w: r.w, h: r.h, id: r.id })));
+        })
+        .catch(() => { setRemnantStock([]); setLoadError("Could not load remnants. Please check the server and your access."); });
     } else {
       setRemnantStock([]);
     }
@@ -114,7 +128,11 @@ export default function OptimizePage() {
         }),
       });
       setMsg("Saved job ✓");
-      fetch("/api/optimize/jobs").then((r) => r.json()).then(setJobs);
+      fetch("/api/optimize/jobs").then(async (response) => {
+        const payload: unknown = await response.json();
+        if (!response.ok || !Array.isArray(payload)) throw new Error("Could not load jobs.");
+        setJobs(payload);
+      }).catch(() => setLoadError("Could not refresh saved jobs."));
     } finally { setBusy(""); }
   }
 
@@ -379,6 +397,7 @@ export default function OptimizePage() {
                 <button onClick={createEstimate} disabled={!!busy} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm">{busy === "quote" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Create estimate</button>
                 <button onClick={printCutList} className="btn-outline-gold flex items-center gap-2 px-4 py-2 text-sm"><Printer size={14} /> Print cut list</button>
                 {msg && <span className="self-center text-sm text-gold">{msg}</span>}
+                {loadError && <span role="alert" className="self-center text-sm text-red-400">{loadError}</span>}
               </div>
 
               {result.bins.map((bin, i) => (
@@ -397,7 +416,7 @@ export default function OptimizePage() {
             <div className="mt-8">
               <h3 className="mb-3 font-semibold text-white">Recent jobs</h3>
               <div className="space-y-2">
-                {jobs.slice(0, 6).map((j) => (
+                {jobs.slice(0, 15).map((j) => (
                   <button key={j.id} onClick={() => loadJob(j)} className="flex w-full items-center justify-between rounded-md border border-border bg-card px-4 py-2 text-left text-sm transition-colors hover:border-gold/40">
                     <span className="text-white">{j.name ?? "Cut job"} <span className="text-xs text-muted-foreground">· {j.engine} · load ↺</span></span>
                     <span className="text-muted-foreground">{j.slabsUsed} slab(s) · {j.yieldPct.toFixed(0)}%{j.cost != null ? ` · $${j.cost.toFixed(0)}` : ""}</span>

@@ -18,10 +18,11 @@ const CATEGORIES = ["All", "Granite", "Quartz", "Marble", "Cabinetry"];
 export default async function MaterialsPage({
   searchParams,
 }: {
-  searchParams: { category?: string };
+  searchParams: Promise<{ category?: string }>;
 }) {
-  const active = CATEGORIES.includes(searchParams.category ?? "")
-    ? (searchParams.category as string)
+  const query = await searchParams;
+  const active = CATEGORIES.includes(query.category ?? "")
+    ? (query.category as string)
     : "All";
 
   const materials = await prisma.material.findMany({

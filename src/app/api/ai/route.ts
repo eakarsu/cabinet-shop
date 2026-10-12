@@ -30,6 +30,7 @@ const FEATURES: Record<string, { system: string }> = {
 
 export async function POST(request: NextRequest) {
   const t0 = Date.now();
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(15_000)]);
   if (!OPENROUTER_API_KEY) {
     return NextResponse.json(
       { error: "AI is unavailable — OPENROUTER_API_KEY is not set." },
@@ -55,7 +56,8 @@ export async function POST(request: NextRequest) {
   if (!prompt.trim()) {
     return NextResponse.json({ error: "Nothing to work with." }, { status: 422 });
   }
-  if (["lead_summary", "lead_reply"].includes(feature) && !isAdmin(await getCaller(request))) {
+  const caller = await getCaller(request);
+  if (["lead_summary", "lead_reply"].includes(feature) && !isAdmin(caller)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -77,19 +79,25 @@ export async function POST(request: NextRequest) {
         temperature: 0.6,
         max_tokens: 600,
       }),
-      signal: AbortSignal.timeout(15_000),
+      signal,
     });
     if (!res.ok) {
       throw new Error(`OpenRouter returned ${res.status}.`);
     }
     const json = await res.json();
-    const text = json.choices?.[0]?.message?.content ?? "";
+    signal.throwIfAborted();
+    const text = String(json.choices?.[0]?.message?.content ?? "").trim();
+    if (!text || !json.id) throw new Error('OpenRouter returned incomplete evidence.');
+    const model = json.model || OPENROUTER_MODEL;
 
     await prisma.aiResult
       .create({
         data: {
           feature,
-          model: OPENROUTER_MODEL,
+          model,
+          userId: caller.id,
+          providerReceipt: json.id,
+          result: text,
           input: { digest: createHash("sha256").update(prompt).digest("hex"), bytes: Buffer.byteLength(prompt) } as any,
           output: { bytes: Buffer.byteLength(text) } as any,
           durationMs: Date.now() - t0,
@@ -97,8 +105,10 @@ export async function POST(request: NextRequest) {
       })
       .catch(() => {});
 
-    return NextResponse.json({ text });
+    signal.throwIfAborted();
+    return NextResponse.json({ text, model, providerReceipt: { requestId: json.id, model, usage: json.usage || null } });
   } catch (_error) {
+    if (request.signal.aborted) return NextResponse.json({ error: 'AI request canceled.' }, { status: 499 });
     await prisma.aiResult
       .create({
         data: {
@@ -111,7 +121,7 @@ export async function POST(request: NextRequest) {
       .catch(() => {});
     return NextResponse.json(
       { error: "The AI ran into a problem. Please try again." },
-      { status: 500 }
+      { status: signal.aborted ? 504 : 502 }
     );
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X, Loader2, Trash2, Ban } from "lucide-react";
 
@@ -72,7 +72,7 @@ export function ConsultationsTable({ items }: { items: Consultation[] }) {
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((c) => (
-              <tr key={c.id} onClick={() => setSelected(c)} className="cursor-pointer transition-colors hover:bg-gold/5">
+              <tr key={c.id} onClick={() => setSelected(c)} tabIndex={0} role="button" aria-label={`Open details for ${c.name}`} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(c); } }} className="cursor-pointer transition-colors hover:bg-gold/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold">
                 <td className="px-4 py-3 font-medium text-white">{c.name}</td>
                 <td className="px-4 py-3 text-muted-foreground">
                   <div>{c.email ?? "—"}</div>
@@ -119,6 +119,12 @@ function ConsultationModal({ c, onClose }: { c: Consultation; onClose: () => voi
     projectType: c.projectType ?? "",
     status: c.status,
   });
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -190,7 +196,7 @@ function ConsultationModal({ c, onClose }: { c: Consultation; onClose: () => voi
 
         <div className="mt-4 flex items-center justify-between">
           <button onClick={remove} className="flex items-center gap-2 rounded-sm border border-border px-4 py-2.5 text-sm text-muted-foreground hover:text-red-400">
-            <Trash2 size={15} /> Cancel booking
+            <Trash2 size={15} /> Delete
           </button>
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-outline-gold px-5 py-2.5 text-sm">Cancel</button>

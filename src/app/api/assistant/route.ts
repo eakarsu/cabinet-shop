@@ -222,8 +222,8 @@ export async function POST(request: NextRequest) {
     console.error("Assistant error:", error);
     await logResult(null, undefined, Date.now() - t0, error);
     return NextResponse.json(
-      { error: "The assistant ran into a problem. Please try again." },
-      { status: 500 }
+      { error: "The AI assistant is unavailable right now. No response was generated; please try again later." },
+      { status: 503 }
     );
   }
 }
@@ -241,6 +241,7 @@ async function logResult(
         model: OPENROUTER_MODEL,
         input: input == null ? undefined : ({ digest: createHash("sha256").update(JSON.stringify(input)).digest("hex"), bytes: Buffer.byteLength(JSON.stringify(input)) } as any),
         output: output != null ? ({ bytes: Buffer.byteLength(String(output)) } as any) : undefined,
+        result: typeof output === "string" ? output : undefined,
         error: error ? "provider_or_validation_error" : undefined,
         durationMs,
       },

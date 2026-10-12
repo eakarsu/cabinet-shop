@@ -55,17 +55,7 @@ export function LoginForm() {
       }
       setEmail(data.email);
       setPassword(data.password);
-      const signInRes = await signIn("credentials", {
-        email: data.email,
-        password: data.password,
-        redirect: false,
-      });
-      if (signInRes?.error) {
-        setError("Invalid email or password.");
-        setLoading(false);
-        return;
-      }
-      await routeAfterSignIn();
+      setLoading(false);
     } catch {
       setError("Local demo credentials are unavailable.");
       setLoading(false);

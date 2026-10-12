@@ -14,13 +14,26 @@ export default function RemnantsPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [form, setForm] = useState({ materialId: "", label: "Offcut", w: 24, h: 12 });
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
-  function load() {
-    fetch("/api/remnants?all=1").then((r) => r.json()).then(setRemnants).catch(() => {});
+  async function load() {
+    try {
+      const response = await fetch("/api/remnants?all=1");
+      const payload: unknown = await response.json();
+      if (!response.ok || !Array.isArray(payload)) throw new Error("Invalid remnants response.");
+      setRemnants(payload);
+      setLoadError("");
+    } catch {
+      setLoadError("Could not load remnants. Please check the server and your access.");
+    }
   }
   useEffect(() => {
-    load();
-    fetch("/api/materials").then((r) => r.json()).then(setMaterials).catch(() => {});
+    void load();
+    fetch("/api/materials").then(async (response) => {
+      const payload: unknown = await response.json();
+      if (!response.ok || !Array.isArray(payload)) throw new Error("Invalid materials response.");
+      setMaterials(payload);
+    }).catch(() => setLoadError("Could not load materials. Please check the server."));
   }, []);
 
   async function add() {
@@ -44,6 +57,7 @@ export default function RemnantsPage() {
     <>
       <AdminPageHeader title="Remnants" subtitle={`${remnants.length} leftover piece(s) — reusable as stock in the Cut Optimizer.`} />
       <div className="space-y-6 p-6 sm:p-8">
+        {loadError && <p role="alert" className="text-sm text-red-400">{loadError}</p>}
         <div className="flex flex-wrap items-end gap-2 rounded-md border border-border bg-card p-4">
           <label className="text-xs text-muted-foreground">Material
             <select value={form.materialId} onChange={(e) => setForm({ ...form, materialId: e.target.value })} className={`mt-1 block w-44 ${input}`}>

@@ -14,6 +14,7 @@ import {
   Users,
   HelpCircle,
   Settings,
+  Sparkles,
   Scissors,
   Boxes,
   ShieldCheck,
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 const LINKS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/quotes", label: "Estimates", icon: FileText },
+  { href: "/admin/ai-reports", label: "AI reports", icon: Sparkles },
   { href: "/admin/accounts", label: "Accounts", icon: Building2 },
   { href: "/admin/consultations", label: "Consultations", icon: CalendarClock },
   { href: "/admin/operations", label: "Sales Controls", icon: ShieldCheck },
