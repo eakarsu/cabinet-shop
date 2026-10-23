@@ -36,32 +36,6 @@ export function LoginForm() {
     await routeAfterSignIn();
   }
 
-  async function onLocalDemo() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/local-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Local-Login": "fill" },
-        credentials: "same-origin",
-      });
-      const data = (await res.json().catch(() => null)) as
-        | { email?: string; password?: string; error?: string }
-        | null;
-      if (!res.ok || !data?.email || !data?.password) {
-        setError(data?.error || "Local demo credentials are unavailable.");
-        setLoading(false);
-        return;
-      }
-      setEmail(data.email);
-      setPassword(data.password);
-      setLoading(false);
-    } catch {
-      setError("Local demo credentials are unavailable.");
-      setLoading(false);
-    }
-  }
-
   return (
     <div className="hero-stone flex min-h-screen items-center justify-center px-5 py-16">
       <div className="w-full max-w-md">
@@ -111,12 +85,20 @@ export function LoginForm() {
 
             <button
               type="button"
-              onClick={onLocalDemo}
-              disabled={loading}
-              className="w-full rounded-sm border border-gold/60 px-4 py-3 text-sm font-semibold text-gold transition hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={async () => {
+                if (process.env.NEXT_PUBLIC_DEMO_EMAIL && process.env.NEXT_PUBLIC_DEMO_PASSWORD) { setEmail(process.env.NEXT_PUBLIC_DEMO_EMAIL); setPassword(process.env.NEXT_PUBLIC_DEMO_PASSWORD); return; }
+                try {
+                  const response = await fetch("/api/auth/demo-credentials", { cache: "no-store" });
+                  if (response.ok) { const data = await response.json(); if (data?.email && data?.password) { setEmail(data.email); setPassword(data.password); return; } }
+                } catch { /* fall through to message below */ }
+                setError("Demo credentials are not configured for this environment.");
+              }}
+              aria-label="Fill demo credentials"
+              className="flex w-full items-center justify-center gap-2 rounded-sm border border-border px-8 py-3.5 text-white"
             >
-              Fill local demo credentials
+              Fill demo credentials
             </button>
+
             <button
               type="submit"
               disabled={loading}

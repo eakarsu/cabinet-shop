@@ -23,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
       <body className="font-sans antialiased">
+<script src="/feature-pack/feature-pack.js" defer />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
